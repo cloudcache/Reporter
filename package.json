@@ -1,6 +1,6 @@
 {
-  "name": "rjcfu",
-  "version": "0.0.0",
+  "name": "Repoter",
+  "version": "0.0.0.1",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
