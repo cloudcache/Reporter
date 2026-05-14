@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { authedJson } from "../lib/auth"
 
 type Protocol = "mysql" | "postgres" | "http" | "soap" | "xml" | "grpc" | "hl7" | "dicom" | "custom"
-type Tab = "base" | "mapping" | "payload" | "result"
+type Tab = "base" | "mapping" | "quality" | "scope" | "payload" | "result"
 
 interface DictionaryEntry {
   key: string
@@ -58,6 +58,16 @@ interface SyncResult {
   patients: unknown[]
   visits: unknown[]
   medicalRecords: unknown[]
+  diagnoses?: unknown[]
+  histories?: unknown[]
+  medications?: unknown[]
+  labReports?: unknown[]
+  examReports?: unknown[]
+  surgeries?: unknown[]
+  followups?: unknown[]
+  interviewFacts?: unknown[]
+  quality?: Array<{ rowIndex: number; status: string; messages: string[] }>
+  errors?: string[]
 }
 
 const emptySource: DataSource = {
@@ -123,13 +133,101 @@ const targetOptions = [
   "record.studyUid",
   "record.studyDesc",
   "record.recordedAt",
+  "diagnosis.diagnosisCode",
+  "diagnosis.diagnosisName",
+  "diagnosis.diagnosisType",
+  "diagnosis.diagnosedAt",
+  "diagnosis.departmentName",
+  "diagnosis.doctorName",
+  "history.historyType",
+  "history.title",
+  "history.content",
+  "history.recordedAt",
+  "medication.orderNo",
+  "medication.prescriptionNo",
+  "medication.drugCode",
+  "medication.drugName",
+  "medication.genericName",
+  "medication.specification",
+  "medication.dosage",
+  "medication.dosageUnit",
+  "medication.frequency",
+  "medication.route",
+  "medication.startAt",
+  "medication.endAt",
+  "medication.days",
+  "medication.quantity",
+  "medication.doctorName",
+  "lab.reportNo",
+  "lab.reportName",
+  "lab.specimen",
+  "lab.reportedAt",
+  "lab.departmentName",
+  "labResult.itemCode",
+  "labResult.itemName",
+  "labResult.resultValue",
+  "labResult.unit",
+  "labResult.referenceRange",
+  "labResult.abnormalFlag",
+  "labResult.numericValue",
+  "exam.examNo",
+  "exam.examType",
+  "exam.examName",
+  "exam.bodyPart",
+  "exam.reportConclusion",
+  "exam.reportFindings",
+  "exam.reportedAt",
+  "surgery.operationCode",
+  "surgery.operationName",
+  "surgery.operationDate",
+  "surgery.surgeonName",
+  "followup.taskId",
+  "followup.projectId",
+  "followup.followupType",
+  "followup.channel",
+  "followup.status",
+  "followup.summary",
+  "followup.satisfactionScore",
+  "followup.followedAt",
+  "fact.interviewId",
+  "fact.factType",
+  "fact.factKey",
+  "fact.factLabel",
+  "fact.factValue",
+  "fact.confidence",
 ]
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: "base", label: "基础信息" },
   { id: "mapping", label: "字段映射" },
+  { id: "quality", label: "数据质量" },
+  { id: "scope", label: "权限范围" },
   { id: "payload", label: "样例报文" },
   { id: "result", label: "映射结果" },
+]
+
+const protocolCapabilities = [
+  { protocol: "http", name: "REST/JSON", text: "HIS/EMR 常见开放 API，支持 rowPath、字段路径和字典转换。" },
+  { protocol: "soap", name: "SOAP/XML", text: "兼容老 HIS WebService 和 XML 节点路径。" },
+  { protocol: "grpc", name: "gRPC", text: "保存服务/方法/消息契约，用样例 JSON 做映射验证。" },
+  { protocol: "hl7", name: "HL7 v2", text: "支持 PID/PV1/OBR/OBX 段字段，适合 ADT、检验、检查消息。" },
+  { protocol: "dicom", name: "DICOM", text: "支持 DICOM Tag 抽取，适合 PACS/影像检查索引。" },
+  { protocol: "mysql", name: "MySQL", text: "保存库表、字段、where 模板和抽取范围配置。" },
+  { protocol: "postgres", name: "PostgreSQL", text: "保存库表、字段、where 模板和抽取范围配置。" },
+]
+
+const dataDomains = [
+  { key: "patient", label: "患者主索引", targets: ["patient.patientNo", "patient.name", "patient.gender", "patient.phone"] },
+  { key: "visit", label: "就诊记录", targets: ["visit.visitNo", "visit.visitType", "visit.departmentName", "visit.attendingDoctor", "visit.diagnosisName"] },
+  { key: "record", label: "电子病历/病例", targets: ["record.recordNo", "record.recordType", "record.title", "record.chiefComplaint", "record.presentIllness"] },
+  { key: "diagnosis", label: "诊断", targets: ["diagnosis.diagnosisCode", "diagnosis.diagnosisName", "diagnosis.diagnosisType", "diagnosis.diagnosedAt"] },
+  { key: "history", label: "既往史", targets: ["history.historyType", "history.title", "history.content", "history.recordedAt"] },
+  { key: "medication", label: "用药", targets: ["medication.orderNo", "medication.drugName", "medication.dosage", "medication.frequency", "medication.route"] },
+  { key: "lab", label: "检验", targets: ["lab.reportNo", "lab.reportName", "labResult.itemName", "labResult.resultValue", "labResult.abnormalFlag"] },
+  { key: "exam", label: "检查/影像", targets: ["exam.examNo", "exam.examName", "exam.reportConclusion", "exam.reportFindings"] },
+  { key: "surgery", label: "手术", targets: ["surgery.operationCode", "surgery.operationName", "surgery.operationDate", "surgery.surgeonName"] },
+  { key: "followup", label: "随访", targets: ["followup.taskId", "followup.summary", "followup.satisfactionScore", "followup.followedAt"] },
+  { key: "fact", label: "访谈事实", targets: ["fact.factType", "fact.factKey", "fact.factLabel", "fact.factValue"] },
 ]
 
 export function DataSourceManager() {
@@ -272,6 +370,24 @@ export function DataSourceManager() {
     setActiveTab("mapping")
   }
 
+  function addDomainTemplate(domainKey: string) {
+    const domain = dataDomains.find((item) => item.key === domainKey)
+    if (!domain) return
+    const existing = new Set((draft.fieldMapping || []).map((item) => item.target))
+    const additions = domain.targets.filter((target) => !existing.has(target)).map((target) => ({ source: sourcePathFromTarget(target, draft.protocol), target, required: ["patient.patientNo", "patient.name"].includes(target) }))
+    setDraft({
+      ...draft,
+      config: { ...(draft.config || {}), dataDomains: Array.from(new Set([...(configArray(draft.config, "dataDomains")), domainKey])) },
+      fieldMapping: [...(draft.fieldMapping || []), ...additions],
+    })
+    setActiveTab("mapping")
+    setMessage(`已加入${domain.label}字段模板`)
+  }
+
+  function updateConfig(key: string, value: unknown) {
+    setDraft({ ...draft, config: { ...(draft.config || {}), [key]: value } })
+  }
+
   useEffect(() => {
     load()
   }, [])
@@ -330,31 +446,44 @@ export function DataSourceManager() {
 
         <div className="min-w-0 p-4">
           {activeTab === "base" && (
-            <section className="grid max-w-4xl gap-4 md:grid-cols-2">
-              <Text label="名称" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
-              <Text label="Endpoint" value={draft.endpoint} onChange={(value) => setDraft({ ...draft, endpoint: value })} />
-              <label className="grid gap-1 text-sm">
-                <span className="text-muted">协议</span>
-                <select className="h-10 rounded-md border border-line px-3 text-sm" value={draft.protocol} onChange={(event) => {
-                  const protocol = event.target.value as Protocol
+            <section className="grid gap-4">
+              <div className="grid max-w-4xl gap-4 md:grid-cols-2">
+                <Text label="名称" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
+                <Text label="Endpoint" value={draft.endpoint} onChange={(value) => setDraft({ ...draft, endpoint: value })} />
+                <label className="grid gap-1 text-sm">
+                  <span className="text-muted">协议</span>
+                  <select className="h-10 rounded-md border border-line px-3 text-sm" value={draft.protocol} onChange={(event) => {
+                    const protocol = event.target.value as Protocol
+                    setDraft({ ...draft, protocol, config: protocolDefaults(protocol) })
+                    setPayload(samplePayload[protocol])
+                  }}>
+                    <option value="http">REST JSON</option>
+                    <option value="soap">SOAP Web Service</option>
+                    <option value="xml">XML</option>
+                    <option value="grpc">gRPC</option>
+                    <option value="mysql">MySQL</option>
+                    <option value="postgres">PostgreSQL</option>
+                    <option value="hl7">HL7 v2</option>
+                    <option value="dicom">DICOM</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                </label>
+                <Text label="凭据引用" value={String(draft.config?.credentialRef || "")} onChange={(value) => updateConfig("credentialRef", value)} />
+                <label className="grid gap-1 text-sm md:col-span-2">
+                  <span className="text-muted">配置 JSON</span>
+                  <textarea className="min-h-32 resize-y rounded-md border border-line px-3 py-2 font-mono text-xs leading-5" value={JSON.stringify(draft.config || {}, null, 2)} onChange={(event) => setDraft({ ...draft, config: safeJSON(event.target.value, draft.config || {}) })} />
+                </label>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-3">
+                {protocolCapabilities.map((item) => <button key={item.protocol} className={`rounded-lg border p-3 text-left ${draft.protocol === item.protocol ? "border-primary bg-blue-50" : "border-line bg-white hover:border-primary"}`} onClick={() => {
+                  const protocol = item.protocol as Protocol
                   setDraft({ ...draft, protocol, config: protocolDefaults(protocol) })
                   setPayload(samplePayload[protocol])
                 }}>
-                  <option value="http">REST JSON</option>
-                  <option value="soap">SOAP Web Service</option>
-                  <option value="xml">XML</option>
-                  <option value="grpc">gRPC</option>
-                  <option value="mysql">MySQL</option>
-                  <option value="postgres">PostgreSQL</option>
-                  <option value="hl7">HL7 v2</option>
-                  <option value="dicom">DICOM</option>
-                  <option value="custom">自定义</option>
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm md:col-span-2">
-                <span className="text-muted">配置 JSON</span>
-                <textarea className="min-h-32 resize-y rounded-md border border-line px-3 py-2 font-mono text-xs leading-5" value={JSON.stringify(draft.config || {}, null, 2)} onChange={(event) => setDraft({ ...draft, config: safeJSON(event.target.value, draft.config || {}) })} />
-              </label>
+                  <div className="font-medium">{item.name}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted">{item.text}</div>
+                </button>)}
+              </div>
             </section>
           )}
 
@@ -411,6 +540,10 @@ export function DataSourceManager() {
                 </div>
                 <datalist id="data-source-target-fields">{targetChoices.map((target) => <option key={target.value} value={target.value}>{target.label}</option>)}</datalist>
                 <div className="rounded-lg border border-line p-3">
+                  <div className="text-sm font-semibold">按数据域快速补齐字段</div>
+                  <div className="mt-2 flex flex-wrap gap-2">{dataDomains.map((domain) => <button key={domain.key} className="rounded-md border border-line px-2 py-1 text-xs text-primary hover:border-primary" onClick={() => addDomainTemplate(domain.key)}>{domain.label}</button>)}</div>
+                </div>
+                <div className="rounded-lg border border-line p-3">
                   <div className="text-sm font-semibold">当前已关联值域字典</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {(draft.dictionaries || []).map((dictionary, index) => <button key={`${dictionary.name}-${index}`} className="rounded-md border border-line px-2 py-1 text-xs text-muted hover:border-red-200 hover:text-red-600" onClick={() => removeDictionary(index)}>{dictionary.name} · {dictionary.entries?.length || 0} 项</button>)}
@@ -419,6 +552,59 @@ export function DataSourceManager() {
                 </div>
               </div>
               <MappingDictionaryPanel systemDictionaries={systemDictionaries} linkedDictionaryNames={linkedDictionaryNames} addMappingFromField={addMappingFromField} linkSystemDictionary={linkSystemDictionary} />
+            </section>
+          )}
+
+          {activeTab === "quality" && (
+            <section className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-line p-4">
+                <h3 className="text-sm font-semibold">抽取与质量规则</h3>
+                <div className="mt-3 grid gap-3">
+                  <Text label="增量字段" value={String(draft.config?.incrementalField || "")} onChange={(value) => updateConfig("incrementalField", value)} />
+                  <Text label="时间窗口" value={String(draft.config?.window || "last_24h")} onChange={(value) => updateConfig("window", value)} />
+                  <Text label="行路径 rowPath" value={String(draft.config?.rowPath || "")} onChange={(value) => updateConfig("rowPath", value)} />
+                  <label className="flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm"><input type="checkbox" checked={draft.config?.rejectMissingRequired !== false} onChange={(event) => updateConfig("rejectMissingRequired", event.target.checked)} />必填缺失时拒绝整行</label>
+                  <label className="flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm"><input type="checkbox" checked={draft.config?.deduplicate !== false} onChange={(event) => updateConfig("deduplicate", event.target.checked)} />按患者号、就诊号、报告号去重更新</label>
+                  <label className="flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm"><input type="checkbox" checked={!!draft.config?.quarantineInvalid} onChange={(event) => updateConfig("quarantineInvalid", event.target.checked)} />异常数据进入隔离队列</label>
+                </div>
+              </div>
+              <div className="rounded-lg border border-line p-4">
+                <h3 className="text-sm font-semibold">支持的数据范围</h3>
+                <p className="mt-1 text-sm text-muted">选择后会记录到数据源配置，并可一键生成字段模板。</p>
+                <div className="mt-3 grid gap-2">
+                  {dataDomains.map((domain) => {
+                    const selected = configArray(draft.config, "dataDomains").includes(domain.key)
+                    return <label key={domain.key} className={`grid cursor-pointer gap-1 rounded-lg border p-3 ${selected ? "border-primary bg-blue-50" : "border-line"}`}>
+                      <span className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={selected} onChange={(event) => updateConfig("dataDomains", toggleArray(configArray(draft.config, "dataDomains"), domain.key, event.target.checked))} />{domain.label}</span>
+                      <span className="text-xs text-muted">{domain.targets.join("、")}</span>
+                    </label>
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeTab === "scope" && (
+            <section className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-line p-4">
+                <h3 className="text-sm font-semibold">权限范围</h3>
+                <p className="mt-1 text-sm text-muted">数据源可被项目调用，但需要限制项目、角色、科室和脱敏策略。</p>
+                <div className="mt-3 grid gap-3">
+                  <Text label="允许项目 ID，逗号分隔" value={configArray(draft.config, "allowedProjects").join(",")} onChange={(value) => updateConfig("allowedProjects", splitList(value))} />
+                  <Text label="允许角色，逗号分隔" value={configArray(draft.config, "allowedRoles").join(",")} onChange={(value) => updateConfig("allowedRoles", splitList(value))} />
+                  <Text label="允许科室，逗号分隔" value={configArray(draft.config, "allowedDepartments").join(",")} onChange={(value) => updateConfig("allowedDepartments", splitList(value))} />
+                  <Text label="脱敏字段，逗号分隔" value={configArray(draft.config, "maskedFields").join(",")} onChange={(value) => updateConfig("maskedFields", splitList(value))} />
+                </div>
+              </div>
+              <div className="rounded-lg border border-line p-4">
+                <h3 className="text-sm font-semibold">ETL 执行策略</h3>
+                <div className="mt-3 grid gap-3">
+                  <Text label="计划表达式" value={String(draft.config?.schedule || "")} onChange={(value) => updateConfig("schedule", value)} />
+                  <Text label="批量大小" value={String(draft.config?.batchSize || 500)} onChange={(value) => updateConfig("batchSize", Number(value || 0))} />
+                  <Text label="失败重试次数" value={String(draft.config?.retry || 3)} onChange={(value) => updateConfig("retry", Number(value || 0))} />
+                  <Text label="接口超时 ms" value={String(draft.config?.timeoutMs || 3000)} onChange={(value) => updateConfig("timeoutMs", Number(value || 0))} />
+                </div>
+              </div>
             </section>
           )}
 
@@ -446,7 +632,7 @@ export function DataSourceManager() {
                   </tbody>
                 </table>
               </div>
-              {result && <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-800">患者 {result.patients.length}，就诊 {result.visits.length}，病历 {result.medicalRecords.length}；新增 {result.created}，更新 {result.updated}</div>}
+              {result && <SyncResultSummary result={result} />}
             </section>
           )}
         </div>
@@ -498,6 +684,34 @@ function MappingDictionaryPanel({ systemDictionaries, linkedDictionaryNames, add
       </div>
     </div>
   </aside>
+}
+
+function SyncResultSummary({ result }: { result: SyncResult }) {
+  const counts = [
+    ["患者", result.patients?.length || 0],
+    ["就诊", result.visits?.length || 0],
+    ["病历", result.medicalRecords?.length || 0],
+    ["诊断", result.diagnoses?.length || 0],
+    ["既往史", result.histories?.length || 0],
+    ["用药", result.medications?.length || 0],
+    ["检验", result.labReports?.length || 0],
+    ["检查", result.examReports?.length || 0],
+    ["手术", result.surgeries?.length || 0],
+    ["随访", result.followups?.length || 0],
+    ["访谈事实", result.interviewFacts?.length || 0],
+  ]
+  return <div className="grid gap-3">
+    <div className="rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-800">同步完成：新增 {result.created}，更新 {result.updated}</div>
+    <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-6">{counts.map(([label, value]) => <div key={label} className="rounded-lg border border-line px-3 py-2"><div className="text-xs text-muted">{label}</div><div className="mt-1 text-xl font-semibold">{value}</div></div>)}</div>
+    {!!result.quality?.length && <div className="rounded-lg border border-line">
+      <div className="border-b border-line px-3 py-2 text-sm font-semibold">数据质量结果</div>
+      <div className="grid gap-2 p-3">{result.quality.map((item) => <div key={item.rowIndex} className={`rounded-lg border px-3 py-2 text-sm ${item.status === "valid" ? "border-green-100 bg-green-50" : item.status === "invalid" ? "border-red-100 bg-red-50" : "border-amber-100 bg-amber-50"}`}>
+        <div className="font-medium">第 {item.rowIndex + 1} 行 · {qualityStatusLabel(item.status)}</div>
+        <div className="mt-1 text-xs text-muted">{item.messages?.join("；") || "无异常"}</div>
+      </div>)}</div>
+    </div>}
+    {!!result.errors?.length && <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{result.errors.join("；")}</div>}
+  </div>
 }
 
 function normalizeSource(source: DataSource): DataSource {
@@ -616,11 +830,12 @@ const legacyTargetMap: Record<string, string> = {
 }
 
 function protocolDefaults(protocol: Protocol): Record<string, unknown> {
-  if (protocol === "mysql" || protocol === "postgres") return { objectType: "table", schema: "", table: "", selectedFields: [], whereTemplate: "" }
-  if (protocol === "grpc") return { proto: "", packageName: "", service: "", method: "", requestMessage: "", responseMessage: "" }
-  if (protocol === "hl7") return { version: "2.5.1", messageTypes: ["ADT^A01"], segments: ["PID", "PV1", "OBR", "OBX"] }
-  if (protocol === "dicom") return { service: "qido", aeTitle: "REPORTER", tags: ["0010,0020", "0010,0010", "0008,1030", "0020,000D"] }
-  return { method: "GET", timeoutMs: 3000 }
+  const common = { dataDomains: ["patient", "visit"], rejectMissingRequired: true, deduplicate: true, timeoutMs: 3000, retry: 3, batchSize: 500 }
+  if (protocol === "mysql" || protocol === "postgres") return { ...common, objectType: "table", schema: "", table: "", selectedFields: [], whereTemplate: "" }
+  if (protocol === "grpc") return { ...common, proto: "", packageName: "", service: "", method: "", requestMessage: "", responseMessage: "" }
+  if (protocol === "hl7") return { ...common, dataDomains: ["patient", "visit", "lab", "exam"], version: "2.5.1", messageTypes: ["ADT^A01", "ORU^R01"], segments: ["PID", "PV1", "OBR", "OBX"] }
+  if (protocol === "dicom") return { ...common, dataDomains: ["patient", "exam"], service: "qido", aeTitle: "REPORTER", tags: ["0010,0020", "0010,0010", "0008,0050", "0008,1030", "0020,000D"] }
+  return { ...common, method: "GET" }
 }
 
 function parsePayload(value: string) {
@@ -636,6 +851,38 @@ function safeJSON(value: string, fallback: unknown) {
   } catch {
     return fallback
   }
+}
+
+function sourcePathFromTarget(target: string, protocol: Protocol) {
+  const [, field = target] = target.split(".")
+  if (protocol === "hl7") {
+    const hl7: Record<string, string> = { patientNo: "PID.3", name: "PID.5", birthDate: "PID.7", gender: "PID.8", phone: "PID.13", visitNo: "PV1.19", visitType: "PV1.2", departmentName: "PV1.3.2", attendingDoctor: "PV1.7.2" }
+    return hl7[field] || field
+  }
+  if (protocol === "dicom") {
+    const dicom: Record<string, string> = { patientNo: "0010,0020", name: "0010,0010", examNo: "0008,0050", examName: "0008,1030", studyUid: "0020,000D" }
+    return dicom[field] || field
+  }
+  return `$.${field}`
+}
+
+function configArray(config: Record<string, unknown> | undefined, key: string) {
+  const value = config?.[key]
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean)
+  if (typeof value === "string") return splitList(value)
+  return []
+}
+
+function splitList(value: string) {
+  return value.split(/[,，;\n]/).map((item) => item.trim()).filter(Boolean)
+}
+
+function toggleArray(items: string[], value: string, checked: boolean) {
+  return checked ? Array.from(new Set([...items, value])) : items.filter((item) => item !== value)
+}
+
+function qualityStatusLabel(status: string) {
+  return ({ valid: "通过", suspicious: "可疑", invalid: "失败" } as Record<string, string>)[status] || status
 }
 
 function Text({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

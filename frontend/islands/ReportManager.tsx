@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ReportChart } from "./ReportChart"
 import { ResultsTable } from "./ResultsTable"
-import { authedJson } from "../lib/auth"
+import { authedFetch, authedJson } from "../lib/auth"
 
 type Row = Record<string, string | number>
 
@@ -26,6 +26,7 @@ interface QueryResult {
   measures: string[]
   rows: Row[]
 }
+interface ReportInsights { sentiment: string; themes: string[]; rootCauses: string[]; suggestions: string[] }
 
 const emptyReport: Report = { id: "", name: "", description: "", widgets: [] }
 const reportTypeLabels: Record<string, string> = { satisfaction: "满意度分析", complaint: "评价投诉分析", followup: "随访分析", custom: "自定义报表" }
@@ -35,8 +36,10 @@ export function ReportManager() {
   const [selectedId, setSelectedId] = useState("")
   const [draft, setDraft] = useState<Report>(emptyReport)
   const [query, setQuery] = useState<QueryResult>({ dimensions: [], measures: [], rows: [] })
+  const [insights, setInsights] = useState<ReportInsights | null>(null)
   const [message, setMessage] = useState("正在连接报表 API...")
-  const selected = useMemo(() => reports.find((report) => report.id === selectedId), [reports, selectedId])
+  const [projectId, setProjectId] = useState("")
+  const selectedIdRef = useRef("")
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     return authedJson<T>(path, init)
@@ -49,8 +52,9 @@ export function ReportManager() {
       const preferred = nextReports.find((item) => item.type === "satisfaction") || nextReports[0]
       if (preferred) {
         setSelectedId(preferred.id)
+        selectedIdRef.current = preferred.id
         setDraft(preferred)
-        await loadQuery(preferred.id)
+        await loadQuery(preferred.id, currentProjectId())
       }
       setMessage("")
     } catch (error) {
@@ -58,15 +62,21 @@ export function ReportManager() {
     }
   }
 
-  async function loadQuery(reportId: string) {
-    setQuery(await authedJson<QueryResult>(`/api/v1/reports/${reportId}/query`, {
+  async function loadQuery(reportId: string, scopedProjectId = projectId) {
+    const [nextQuery, nextInsights] = await Promise.all([
+      authedJson<QueryResult>(`/api/v1/reports/${reportId}/query`, {
       method: "POST",
-      body: "{}",
-    }))
+      body: JSON.stringify(scopedProjectId ? { projectId: scopedProjectId } : {}),
+      }),
+      authedJson<ReportInsights>(`/api/v1/reports/${reportId}/insights${scopedProjectId ? `?projectId=${encodeURIComponent(scopedProjectId)}` : ""}`).catch(() => null),
+    ])
+    setQuery(nextQuery)
+    setInsights(nextInsights)
   }
 
   async function selectReport(report: Report) {
     setSelectedId(report.id)
+    selectedIdRef.current = report.id
     setDraft(report)
     setMessage("")
     try {
@@ -88,6 +98,7 @@ export function ReportManager() {
       }
       setDraft(report)
       setSelectedId(report.id)
+      selectedIdRef.current = report.id
       setMessage("已保存报表")
     } catch (error) {
       setMessage(`保存失败：${error instanceof Error ? error.message : "未知错误"}`)
@@ -110,8 +121,31 @@ export function ReportManager() {
     }
   }
 
+  async function exportReport(format: "word" | "pdf") {
+    if (!selectedId) return
+    const scope = projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""
+    const response = await authedFetch(`/api/v1/reports/${selectedId}/export?format=${format}${scope}`)
+    if (!response.ok) throw new Error(await response.text())
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `${draft.name || "report"}.${format === "word" ? "doc" : "pdf"}`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   useEffect(() => {
+    setProjectId(currentProjectId())
     loginAndLoad()
+    const onScopeChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string }>).detail
+      const nextProjectId = detail?.projectId || ""
+      setProjectId(nextProjectId)
+      if (selectedIdRef.current) loadQuery(selectedIdRef.current, nextProjectId)
+    }
+    window.addEventListener("project-scope-change", onScopeChange)
+    return () => window.removeEventListener("project-scope-change", onScopeChange)
   }, [])
 
   const xField = query.dimensions[0] || "month"
@@ -122,7 +156,7 @@ export function ReportManager() {
       <aside className="rounded-lg border border-line bg-surface p-4">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">分析报表</h2>
-          <button className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-primary" onClick={() => { setSelectedId(""); setDraft(emptyReport); setQuery({ dimensions: [], measures: [], rows: [] }) }}>
+          <button className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-primary" onClick={() => { setSelectedId(""); selectedIdRef.current = ""; setDraft(emptyReport); setQuery({ dimensions: [], measures: [], rows: [] }) }}>
             新建
           </button>
         </div>
@@ -157,7 +191,15 @@ export function ReportManager() {
           <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => addWidget("bar")}>添加图表</button>
           <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => addWidget("table")}>添加明细表</button>
           <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary" disabled={!selectedId} onClick={() => selectedId && loadQuery(selectedId)}>刷新数据</button>
+          <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary disabled:text-muted" disabled={!selectedId} onClick={() => exportReport("word")}>导出 Word</button>
+          <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary disabled:text-muted" disabled={!selectedId} onClick={() => exportReport("pdf")}>导出 PDF</button>
         </div>
+
+        {insights && <div className="grid gap-3 rounded-lg border border-line bg-surface p-4">
+          <h2 className="text-base font-semibold">AI 洞察</h2>
+          <div className="flex flex-wrap gap-2">{insights.themes.map((item) => <span key={item} className="rounded-full bg-blue-50 px-3 py-1 text-xs text-primary">{item}</span>)}</div>
+          <div className="grid gap-2 text-sm leading-6 text-muted">{[...insights.rootCauses, ...insights.suggestions].map((item) => <p key={item}>{item}</p>)}</div>
+        </div>}
 
         <div className="grid gap-5 xl:grid-cols-[1fr_1.15fr]">
           <ReportChart data={query.rows} xField={xField} yField={yField} title={draft.widgets?.find((item) => item.type !== "table")?.title || draft.name || "报表图表"} />
@@ -169,4 +211,8 @@ export function ReportManager() {
       </section>
     </div>
   )
+}
+
+function currentProjectId() {
+  return new URLSearchParams(window.location.search).get("projectId") || ""
 }

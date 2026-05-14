@@ -465,20 +465,32 @@ type AuditLog struct {
 }
 
 type DataBinding struct {
-	Kind         string                 `json:"kind"`
-	DataSourceID string                 `json:"dataSourceId,omitempty"`
-	Operation    string                 `json:"operation,omitempty"`
-	Params       map[string]interface{} `json:"params,omitempty"`
+	Kind         string      `json:"kind"`
+	DataSourceID string      `json:"dataSourceId,omitempty"`
+	Operation    string      `json:"operation,omitempty"`
+	Params       interface{} `json:"params,omitempty"`
+	LabelPath    string      `json:"labelPath,omitempty"`
+	ValuePath    string      `json:"valuePath,omitempty"`
 }
 
 type FormComponent struct {
-	ID       string                 `json:"id"`
-	Type     string                 `json:"type"`
-	Label    string                 `json:"label"`
-	Required bool                   `json:"required"`
-	Config   map[string]interface{} `json:"config,omitempty"`
-	Binding  *DataBinding           `json:"binding,omitempty"`
-	Children []FormComponent        `json:"children,omitempty"`
+	ID              string                 `json:"id"`
+	Type            string                 `json:"type"`
+	Label           string                 `json:"label"`
+	Required        bool                   `json:"required"`
+	Category        string                 `json:"category,omitempty"`
+	HelpText        string                 `json:"helpText,omitempty"`
+	Placeholder     string                 `json:"placeholder,omitempty"`
+	Options         []map[string]string    `json:"options,omitempty"`
+	Rows            []string               `json:"rows,omitempty"`
+	Columns         []string               `json:"columns,omitempty"`
+	Scale           int                    `json:"scale,omitempty"`
+	Config          map[string]interface{} `json:"config,omitempty"`
+	Binding         *DataBinding           `json:"binding,omitempty"`
+	Children        []FormComponent        `json:"children,omitempty"`
+	VisibilityRules map[string]interface{} `json:"visibilityRules,omitempty"`
+	JumpRules       map[string]interface{} `json:"jumpRules,omitempty"`
+	ValidationRules map[string]interface{} `json:"validationRules,omitempty"`
 }
 
 type FormLibraryItem struct {
@@ -627,18 +639,33 @@ type DataSourceSyncRequest struct {
 }
 
 type DataSourceSyncResult struct {
-	Rows           []MappedRecord  `json:"rows"`
-	Patients       []Patient       `json:"patients"`
-	Visits         []ClinicalVisit `json:"visits"`
-	MedicalRecords []MedicalRecord `json:"medicalRecords"`
-	Created        int             `json:"created"`
-	Updated        int             `json:"updated"`
-	Errors         []string        `json:"errors,omitempty"`
+	Rows           []MappedRecord            `json:"rows"`
+	Patients       []Patient                 `json:"patients"`
+	Visits         []ClinicalVisit           `json:"visits"`
+	MedicalRecords []MedicalRecord           `json:"medicalRecords"`
+	Diagnoses      []PatientDiagnosis        `json:"diagnoses,omitempty"`
+	Histories      []PatientHistory          `json:"histories,omitempty"`
+	Medications    []MedicationOrder         `json:"medications,omitempty"`
+	LabReports     []LabReport               `json:"labReports,omitempty"`
+	ExamReports    []ExamReport              `json:"examReports,omitempty"`
+	Surgeries      []SurgeryRecord           `json:"surgeries,omitempty"`
+	Followups      []FollowupRecord          `json:"followups,omitempty"`
+	InterviewFacts []InterviewExtractedFact  `json:"interviewFacts,omitempty"`
+	Quality        []DataSourceQualityResult `json:"quality,omitempty"`
+	Created        int                       `json:"created"`
+	Updated        int                       `json:"updated"`
+	Errors         []string                  `json:"errors,omitempty"`
 }
 
 type MappedRecord struct {
 	Raw      map[string]interface{}            `json:"raw,omitempty"`
 	Entities map[string]map[string]interface{} `json:"entities"`
+}
+
+type DataSourceQualityResult struct {
+	RowIndex int      `json:"rowIndex"`
+	Status   string   `json:"status"`
+	Messages []string `json:"messages"`
 }
 
 type Report struct {
@@ -738,6 +765,34 @@ type SurveyShareLink struct {
 	Config         map[string]interface{} `json:"config,omitempty"`
 	CreatedAt      time.Time              `json:"createdAt"`
 	UpdatedAt      time.Time              `json:"updatedAt"`
+}
+
+type SurveyChannelDelivery struct {
+	ID            string                 `json:"id"`
+	ProjectID     string                 `json:"projectId,omitempty"`
+	ShareID       string                 `json:"shareId"`
+	Channel       string                 `json:"channel"`
+	Recipient     string                 `json:"recipient"`
+	RecipientName string                 `json:"recipientName,omitempty"`
+	Status        string                 `json:"status"`
+	Message       string                 `json:"message,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+	ProviderRef   string                 `json:"providerRef,omitempty"`
+	Config        map[string]interface{} `json:"config,omitempty"`
+	SentAt        string                 `json:"sentAt,omitempty"`
+	CreatedAt     time.Time              `json:"createdAt"`
+	UpdatedAt     time.Time              `json:"updatedAt"`
+}
+
+type SurveyChannelRecipient struct {
+	PatientID   string `json:"patientId"`
+	PatientNo   string `json:"patientNo,omitempty"`
+	Name        string `json:"name"`
+	Channel     string `json:"channel"`
+	Recipient   string `json:"recipient"`
+	Source      string `json:"source"`
+	Available   bool   `json:"available"`
+	Unavailable string `json:"unavailable,omitempty"`
 }
 
 type SatisfactionProject struct {

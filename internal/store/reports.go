@@ -13,7 +13,7 @@ import (
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) EnsureReportTables(ctx context.Context) error {
+func (s *Store) EnsureReportTables(ctx context.Context) error {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return err
@@ -86,31 +86,31 @@ ON DUPLICATE KEY UPDATE title = VALUES(title), query_json = VALUES(query_json)`,
 	return nil
 }
 
-func (s *MemoryStore) ReportDefinitions(ctx context.Context) ([]domain.Report, error) {
+func (s *Store) ReportDefinitions(ctx context.Context) ([]domain.Report, error) {
 	return s.dbReports(ctx)
 }
 
-func (s *MemoryStore) ReportDefinition(ctx context.Context, id string) (domain.Report, error) {
+func (s *Store) ReportDefinition(ctx context.Context, id string) (domain.Report, error) {
 	return s.dbReport(ctx, id)
 }
 
-func (s *MemoryStore) CreateReportDefinition(ctx context.Context, report domain.Report) (domain.Report, error) {
+func (s *Store) CreateReportDefinition(ctx context.Context, report domain.Report) (domain.Report, error) {
 	return s.createDBReport(ctx, report)
 }
 
-func (s *MemoryStore) UpdateReportDefinition(ctx context.Context, id string, patch domain.Report) (domain.Report, error) {
+func (s *Store) UpdateReportDefinition(ctx context.Context, id string, patch domain.Report) (domain.Report, error) {
 	return s.updateDBReport(ctx, id, patch)
 }
 
-func (s *MemoryStore) AddReportDefinitionWidget(ctx context.Context, reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
+func (s *Store) AddReportDefinitionWidget(ctx context.Context, reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
 	return s.addDBReportWidget(ctx, reportID, widget)
 }
 
-func (s *MemoryStore) QueryReportData(ctx context.Context, reportID string) (map[string]interface{}, error) {
-	return s.queryDBReport(ctx, reportID)
+func (s *Store) QueryReportData(ctx context.Context, reportID string, projectID string) (map[string]interface{}, error) {
+	return s.queryDBReport(ctx, reportID, projectID)
 }
 
-func (s *MemoryStore) dbReports(ctx context.Context) ([]domain.Report, error) {
+func (s *Store) dbReports(ctx context.Context) ([]domain.Report, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func (s *MemoryStore) dbReports(ctx context.Context) ([]domain.Report, error) {
 	return reports, rows.Err()
 }
 
-func (s *MemoryStore) dbReport(ctx context.Context, id string) (domain.Report, error) {
+func (s *Store) dbReport(ctx context.Context, id string) (domain.Report, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.Report{}, err
@@ -189,7 +189,7 @@ func dbReportWidgets(ctx context.Context, db *sql.DB, reportID string) ([]domain
 	return widgets, rows.Err()
 }
 
-func (s *MemoryStore) createDBReport(ctx context.Context, report domain.Report) (domain.Report, error) {
+func (s *Store) createDBReport(ctx context.Context, report domain.Report) (domain.Report, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.Report{}, err
@@ -208,7 +208,7 @@ func (s *MemoryStore) createDBReport(ctx context.Context, report domain.Report) 
 	return s.dbReport(ctx, report.ID)
 }
 
-func (s *MemoryStore) updateDBReport(ctx context.Context, id string, patch domain.Report) (domain.Report, error) {
+func (s *Store) updateDBReport(ctx context.Context, id string, patch domain.Report) (domain.Report, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.Report{}, err
@@ -228,7 +228,7 @@ WHERE id = ?`, patch.Type, patch.Name, patch.Description, id); err != nil {
 	return s.dbReport(ctx, id)
 }
 
-func (s *MemoryStore) addDBReportWidget(ctx context.Context, reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
+func (s *Store) addDBReportWidget(ctx context.Context, reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.ReportWidget{}, err
@@ -251,22 +251,22 @@ func (s *MemoryStore) addDBReportWidget(ctx context.Context, reportID string, wi
 	return widget, nil
 }
 
-func (s *MemoryStore) queryDBReport(ctx context.Context, reportID string) (map[string]interface{}, error) {
+func (s *Store) queryDBReport(ctx context.Context, reportID string, projectID string) (map[string]interface{}, error) {
 	report, err := s.dbReport(ctx, reportID)
 	if err != nil {
 		return nil, err
 	}
 	switch report.Type {
 	case "satisfaction":
-		return s.querySatisfactionReport(ctx)
+		return s.querySatisfactionReport(ctx, projectID)
 	case "complaint":
 		return s.queryComplaintReport(ctx)
 	default:
-		return s.queryFollowupReport(ctx)
+		return s.queryFollowupReport(ctx, projectID)
 	}
 }
 
-func (s *MemoryStore) querySatisfactionReport(ctx context.Context) (map[string]interface{}, error) {
+func (s *Store) querySatisfactionReport(ctx context.Context, projectID string) (map[string]interface{}, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -279,6 +279,7 @@ SELECT dimension_type, dimension_value, indicator_name,
        ROUND(SUM(CASE WHEN quality_status = 'valid' THEN 1 ELSE 0 END) * 100 / NULLIF(COUNT(DISTINCT submission_id), 0), 2) AS valid_rate
 FROM (
   SELECT '指标' AS dimension_type,
+         COALESCE(ss.project_id, '') AS project_id,
          COALESCE(si.name, siq.question_label, sa.question_label, '未绑定指标') AS dimension_value,
          COALESCE(si.name, siq.question_label, sa.question_label, '未绑定指标') AS indicator_name,
          ss.id AS submission_id,
@@ -293,6 +294,7 @@ FROM (
   UNION ALL
 
   SELECT '科室' AS dimension_type,
+         COALESCE(ss.project_id, '') AS project_id,
          COALESCE(cv.department_name, sis.department_name, '未绑定科室') AS dimension_value,
          COALESCE(si.name, siq.question_label, sa.question_label, sis.indicator_id, '综合满意度') AS indicator_name,
          ss.id AS submission_id,
@@ -309,6 +311,7 @@ FROM (
   UNION ALL
 
   SELECT '医生' AS dimension_type,
+         COALESCE(ss.project_id, '') AS project_id,
          COALESCE(cv.attending_doctor, pd.doctor_name, sis.doctor_name, '未绑定医生') AS dimension_value,
          COALESCE(si.name, siq.question_label, sa.question_label, sis.indicator_id, '综合满意度') AS indicator_name,
          ss.id AS submission_id,
@@ -326,6 +329,7 @@ FROM (
   UNION ALL
 
   SELECT '病种' AS dimension_type,
+         COALESCE(ss.project_id, '') AS project_id,
          COALESCE(pd.diagnosis_name, cv.diagnosis_name, sis.disease_name, '未绑定病种') AS dimension_value,
          COALESCE(si.name, siq.question_label, sa.question_label, sis.indicator_id, '综合满意度') AS indicator_name,
          ss.id AS submission_id,
@@ -343,6 +347,7 @@ FROM (
   UNION ALL
 
   SELECT '就诊类型' AS dimension_type,
+         COALESCE(ss.project_id, '') AS project_id,
          COALESCE(cv.visit_type, sis.visit_type, '未绑定就诊类型') AS dimension_value,
          COALESCE(si.name, siq.question_label, sa.question_label, sis.indicator_id, '综合满意度') AS indicator_name,
          ss.id AS submission_id,
@@ -356,8 +361,9 @@ FROM (
   LEFT JOIN satisfaction_indicator_scores sis ON sis.project_id = ss.project_id AND (sis.patient_id = ss.patient_id OR sis.visit_id = ss.visit_id)
   WHERE ss.status <> 'deleted' AND COALESCE(sa.score, sis.score) IS NOT NULL
 ) report_source
+WHERE (? = '' OR project_id = ?)
 GROUP BY dimension_type, dimension_value, indicator_name
-ORDER BY FIELD(dimension_type, '指标', '科室', '医生', '病种', '就诊类型'), score DESC, sample_count DESC`)
+ORDER BY FIELD(dimension_type, '指标', '科室', '医生', '病种', '就诊类型'), score DESC, sample_count DESC`, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +381,7 @@ ORDER BY FIELD(dimension_type, '指标', '科室', '医生', '病种', '就诊�
 	return map[string]interface{}{"dimensions": []string{"dimensionValue", "dimensionType", "indicator"}, "measures": []string{"score", "sampleCount", "validRate"}, "rows": resultRows}, rows.Err()
 }
 
-func (s *MemoryStore) queryComplaintReport(ctx context.Context) (map[string]interface{}, error) {
+func (s *Store) queryComplaintReport(ctx context.Context) (map[string]interface{}, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -407,7 +413,7 @@ ORDER BY total DESC`)
 	return map[string]interface{}{"dimensions": []string{"department"}, "measures": []string{"total", "complaints", "praises", "archived"}, "rows": resultRows}, rows.Err()
 }
 
-func (s *MemoryStore) queryFollowupReport(ctx context.Context) (map[string]interface{}, error) {
+func (s *Store) queryFollowupReport(ctx context.Context, projectID string) (map[string]interface{}, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -419,8 +425,9 @@ SELECT COALESCE(DATE_FORMAT(followed_at, '%Y-%m'), DATE_FORMAT(created_at, '%Y-%
        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
        ROUND(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) * 100 / NULLIF(COUNT(*), 0), 2) AS completion_rate
 FROM followup_records
+WHERE (? = '' OR project_id = ?)
 GROUP BY COALESCE(DATE_FORMAT(followed_at, '%Y-%m'), DATE_FORMAT(created_at, '%Y-%m'))
-ORDER BY month`)
+ORDER BY month`, projectID, projectID)
 	if err != nil {
 		if strings.Contains(err.Error(), "followup_records") {
 			return map[string]interface{}{"dimensions": []string{"month"}, "measures": []string{"submissions", "completed", "completionRate"}, "rows": []map[string]interface{}{}}, nil

@@ -104,7 +104,7 @@ async function searchAll(keyword: string): Promise<SearchItem[]> {
     authedJson<FormLibrary>("/api/v1/form-library").catch(() => ({})),
     authedJson<DataSource[]>("/api/v1/data-sources").catch(() => []),
     authedJson<Dictionary[]>("/api/v1/dictionaries").catch(() => []),
-    authedJson<Project[]>("/api/v1/satisfaction/projects").catch(() => []),
+    authedJson<Project[]>("/api/v1/projects").catch(() => []),
   ])
   const normalized = keyword.toLowerCase()
   return [
@@ -112,7 +112,7 @@ async function searchAll(keyword: string): Promise<SearchItem[]> {
     ...matchForms(library, normalized),
     ...sources.filter((item) => includes(item.name, normalized) || includes(item.endpoint, normalized) || includes(item.protocol, normalized)).slice(0, 6).map((item) => ({ id: `source-${item.id}`, kind: "数据源", title: item.name, subtitle: [item.protocol, item.endpoint].filter(Boolean).join(" · "), href: `/sources?focus=${encodeURIComponent(item.id)}` })),
     ...dictionaries.filter((item) => dictionaryMatches(item, normalized)).slice(0, 6).map((item) => ({ id: `dict-${item.id}`, kind: "字典", title: item.name, subtitle: `${item.code} · ${item.category} · ${item.items?.length || 0} 项`, href: `/system/dictionaries?focus=${encodeURIComponent(item.id)}` })),
-    ...projects.filter((item) => includes(item.name, normalized) || includes(item.targetType, normalized) || includes(item.status, normalized)).slice(0, 6).map((item) => ({ id: `project-${item.id}`, kind: "满意度项目", title: item.name, subtitle: [item.targetType, item.status].filter(Boolean).join(" · "), href: `/forms/share?focus=${encodeURIComponent(item.id)}` })),
+    ...projects.filter((item) => includes(item.name, normalized) || includes(item.targetType, normalized) || includes(item.status, normalized)).slice(0, 6).map((item) => ({ id: `project-${item.id}`, kind: "项目", title: item.name, subtitle: [item.targetType, item.status].filter(Boolean).join(" · "), href: `/projects?focus=${encodeURIComponent(item.id)}` })),
   ].slice(0, 24)
 }
 

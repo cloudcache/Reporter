@@ -17,7 +17,7 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
-type MemoryStore struct {
+type Store struct {
 	mu           sync.RWMutex
 	dbDriver     string
 	dbDSN        string
@@ -50,14 +50,14 @@ type MemoryStore struct {
 	auditLogs    []domain.AuditLog
 }
 
-func (s *MemoryStore) ConfigureSQL(driver, dsn string) {
+func (s *Store) ConfigureSQL(driver, dsn string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.dbDriver = firstNonEmptyStore(driver, "mysql")
 	s.dbDSN = strings.TrimSpace(dsn)
 }
 
-func (s *MemoryStore) LoadIdentityFromSQL(ctx context.Context, driver, dsn string) error {
+func (s *Store) LoadIdentityFromSQL(ctx context.Context, driver, dsn string) error {
 	if strings.TrimSpace(dsn) == "" {
 		return nil
 	}
@@ -168,11 +168,8 @@ func loadUsers(ctx context.Context, db *sql.DB) (map[string]domain.User, error) 
 	return users, roleRows.Err()
 }
 
-func NewMemoryStore() *MemoryStore {
-	adminHash, _ := auth.HashPassword("admin123")
-	userHash, _ := auth.HashPassword("user123")
-	now := time.Now().UTC()
-	store := &MemoryStore{
+func newEmptyStore() *Store {
+	return &Store{
 		users:        map[string]domain.User{},
 		roles:        map[string]domain.Role{},
 		patients:     map[string]domain.Patient{},
@@ -184,7 +181,7 @@ func NewMemoryStore() *MemoryStore {
 		followPlans:  map[string]domain.FollowupPlan{},
 		followTasks:  map[string]domain.FollowupTask{},
 		forms:        map[string]domain.Form{},
-		formLibrary:  DefaultFormLibrary(),
+		formLibrary:  []domain.FormLibraryItem{},
 		submissions:  map[string]domain.Submission{},
 		dataSources:  map[string]domain.DataSource{},
 		reports:      map[string]domain.Report{},
@@ -201,9 +198,57 @@ func NewMemoryStore() *MemoryStore {
 		interviews:   map[string]domain.InterviewSession{},
 		auditLogs:    []domain.AuditLog{},
 	}
+}
+
+func InstallOnly() *Store {
+	return newEmptyStore()
+}
+
+func Open(ctx context.Context, driver, dsn string) (*Store, error) {
+	if strings.TrimSpace(dsn) == "" {
+		return nil, errors.New("database dsn required")
+	}
+	store := newEmptyStore()
+	store.ConfigureSQL(driver, dsn)
+	if err := store.LoadIdentityFromSQL(ctx, driver, dsn); err != nil {
+		return nil, err
+	}
+	if err := store.LoadFormLibraryFromSQL(ctx, driver, dsn); err != nil {
+		return nil, err
+	}
+	if err := store.LoadFollowupConfigFromSQL(ctx, driver, dsn); err != nil {
+		return nil, err
+	}
+	if err := store.EnsureEvaluationComplaintTables(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.EnsurePatientGroupTables(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.EnsurePatientTables(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.EnsureSurveyChannelTables(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.EnsureClinicalFactTables(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.EnsureReportTables(ctx); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func NewTestStore() *Store {
+	adminHash, _ := auth.HashPassword("admin123")
+	userHash, _ := auth.HashPassword("user123")
+	now := time.Now().UTC()
+	store := newEmptyStore()
+	store.formLibrary = DefaultFormLibrary()
 	store.roles["admin"] = domain.Role{ID: "admin", Name: "系统管理员", Description: "拥有平台全部管理权限", Permissions: []string{"*:*"}}
 	store.roles["doctor"] = domain.Role{ID: "doctor", Name: "医生", Description: "查看患者档案、制定随访方案、处理异常结果", Permissions: []string{"/api/v1/patients:read", "/api/v1/forms:read", "/api/v1/followup:*", "/api/v1/reports:read", "/api/v1/complaints:read", "/api/v1/complaints:update"}}
-	store.roles["nurse"] = domain.Role{ID: "nurse", Name: "护士", Description: "维护护理随访、宣教和患者基础信息", Permissions: []string{"/api/v1/patients:*", "/api/v1/followup:read", "/api/v1/followup:update", "/api/v1/forms:read", "/api/v1/complaints:read", "/api/v1/complaints:update"}}
+	store.roles["nurse"] = domain.Role{ID: "nurse", Name: "护士", Description: "执行护理随访、查看授权患者档案和处理随访记录", Permissions: []string{"/api/v1/patients:read", "/api/v1/followup:read", "/api/v1/followup:update", "/api/v1/forms:read", "/api/v1/complaints:read", "/api/v1/complaints:create"}}
 	store.roles["analyst"] = domain.Role{ID: "analyst", Name: "数据分析员", Description: "可管理表单、报表并查看数据源", Permissions: []string{"/api/v1/forms:*", "/api/v1/reports:*", "/api/v1/data-sources:read", "/api/v1/complaints:read"}}
 	store.roles["agent"] = domain.Role{ID: "agent", Name: "随访员/调查员", Description: "可查看患者并执行电话随访、问卷调查", Permissions: []string{"/api/v1/patients:read", "/api/v1/followup:read", "/api/v1/followup:update", "/api/v1/call-center:read", "/api/v1/call-center:create", "/api/v1/call-center:update", "/api/v1/complaints:read", "/api/v1/complaints:create"}}
 	store.users["1"] = domain.User{ID: "1", Username: "admin", DisplayName: "管理员", PasswordHash: adminHash, Roles: []string{"admin"}, CreatedAt: now, UpdatedAt: now}
@@ -341,7 +386,7 @@ func NewMemoryStore() *MemoryStore {
 	return store
 }
 
-func (s *MemoryStore) Seats() []domain.AgentSeat {
+func (s *Store) Seats() []domain.AgentSeat {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	seats := make([]domain.AgentSeat, 0, len(s.seats))
@@ -351,7 +396,7 @@ func (s *MemoryStore) Seats() []domain.AgentSeat {
 	return seats
 }
 
-func (s *MemoryStore) enrichSeatLocked(seat domain.AgentSeat) domain.AgentSeat {
+func (s *Store) enrichSeatLocked(seat domain.AgentSeat) domain.AgentSeat {
 	if user, ok := s.users[seat.UserID]; ok {
 		seat.Username = user.Username
 		seat.UserDisplay = user.DisplayName
@@ -359,7 +404,7 @@ func (s *MemoryStore) enrichSeatLocked(seat domain.AgentSeat) domain.AgentSeat {
 	return seat
 }
 
-func (s *MemoryStore) CreateSeat(seat domain.AgentSeat) domain.AgentSeat {
+func (s *Store) CreateSeat(seat domain.AgentSeat) domain.AgentSeat {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -375,14 +420,14 @@ func (s *MemoryStore) CreateSeat(seat domain.AgentSeat) domain.AgentSeat {
 	return seat
 }
 
-func (s *MemoryStore) Seat(id string) (domain.AgentSeat, bool) {
+func (s *Store) Seat(id string) (domain.AgentSeat, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	seat, ok := s.seats[id]
 	return s.enrichSeatLocked(seat), ok
 }
 
-func (s *MemoryStore) UpdateSeat(id string, patch domain.AgentSeat) (domain.AgentSeat, error) {
+func (s *Store) UpdateSeat(id string, patch domain.AgentSeat) (domain.AgentSeat, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seat, ok := s.seats[id]
@@ -404,7 +449,7 @@ func (s *MemoryStore) UpdateSeat(id string, patch domain.AgentSeat) (domain.Agen
 	return seat, nil
 }
 
-func (s *MemoryStore) DeleteSeat(id string) (domain.AgentSeat, error) {
+func (s *Store) DeleteSeat(id string) (domain.AgentSeat, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seat, ok := s.seats[id]
@@ -415,7 +460,7 @@ func (s *MemoryStore) DeleteSeat(id string) (domain.AgentSeat, error) {
 	return seat, nil
 }
 
-func (s *MemoryStore) SipEndpoints() []domain.SipEndpoint {
+func (s *Store) SipEndpoints() []domain.SipEndpoint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	endpoints := make([]domain.SipEndpoint, 0, len(s.sip))
@@ -425,9 +470,14 @@ func (s *MemoryStore) SipEndpoints() []domain.SipEndpoint {
 	return endpoints
 }
 
-func (s *MemoryStore) DefaultSipEndpoint() (domain.SipEndpoint, bool) {
+func (s *Store) DefaultSipEndpoint() (domain.SipEndpoint, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	for _, endpoint := range s.sip {
+		if sipConfigEnabled(endpoint.Config) {
+			return endpoint, true
+		}
+	}
 	if endpoint, ok := s.sip["SIP001"]; ok {
 		return endpoint, true
 	}
@@ -437,14 +487,29 @@ func (s *MemoryStore) DefaultSipEndpoint() (domain.SipEndpoint, bool) {
 	return domain.SipEndpoint{}, false
 }
 
-func (s *MemoryStore) SipEndpoint(id string) (domain.SipEndpoint, bool) {
+func sipConfigEnabled(config map[string]interface{}) bool {
+	if config == nil {
+		return false
+	}
+	switch value := config["enabled"].(type) {
+	case bool:
+		return value
+	case string:
+		value = strings.TrimSpace(strings.ToLower(value))
+		return value == "true" || value == "1" || value == "yes"
+	default:
+		return false
+	}
+}
+
+func (s *Store) SipEndpoint(id string) (domain.SipEndpoint, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	endpoint, ok := s.sip[id]
 	return endpoint, ok
 }
 
-func (s *MemoryStore) CreateSipEndpoint(endpoint domain.SipEndpoint) domain.SipEndpoint {
+func (s *Store) CreateSipEndpoint(endpoint domain.SipEndpoint) domain.SipEndpoint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -457,7 +522,7 @@ func (s *MemoryStore) CreateSipEndpoint(endpoint domain.SipEndpoint) domain.SipE
 	return endpoint
 }
 
-func (s *MemoryStore) UpdateSipEndpoint(id string, patch domain.SipEndpoint) (domain.SipEndpoint, error) {
+func (s *Store) UpdateSipEndpoint(id string, patch domain.SipEndpoint) (domain.SipEndpoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	endpoint, ok := s.sip[id]
@@ -474,7 +539,7 @@ func (s *MemoryStore) UpdateSipEndpoint(id string, patch domain.SipEndpoint) (do
 	return endpoint, nil
 }
 
-func (s *MemoryStore) DeleteSipEndpoint(id string) (domain.SipEndpoint, error) {
+func (s *Store) DeleteSipEndpoint(id string) (domain.SipEndpoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	endpoint, ok := s.sip[id]
@@ -485,7 +550,7 @@ func (s *MemoryStore) DeleteSipEndpoint(id string) (domain.SipEndpoint, error) {
 	return endpoint, nil
 }
 
-func (s *MemoryStore) StorageConfigs() []domain.StorageConfig {
+func (s *Store) StorageConfigs() []domain.StorageConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	configs := make([]domain.StorageConfig, 0, len(s.storageCfg))
@@ -495,14 +560,14 @@ func (s *MemoryStore) StorageConfigs() []domain.StorageConfig {
 	return configs
 }
 
-func (s *MemoryStore) StorageConfig(id string) (domain.StorageConfig, bool) {
+func (s *Store) StorageConfig(id string) (domain.StorageConfig, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	config, ok := s.storageCfg[id]
 	return config, ok
 }
 
-func (s *MemoryStore) CreateStorageConfig(config domain.StorageConfig) domain.StorageConfig {
+func (s *Store) CreateStorageConfig(config domain.StorageConfig) domain.StorageConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -515,7 +580,7 @@ func (s *MemoryStore) CreateStorageConfig(config domain.StorageConfig) domain.St
 	return config
 }
 
-func (s *MemoryStore) UpdateStorageConfig(id string, patch domain.StorageConfig) (domain.StorageConfig, error) {
+func (s *Store) UpdateStorageConfig(id string, patch domain.StorageConfig) (domain.StorageConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	config, ok := s.storageCfg[id]
@@ -535,7 +600,7 @@ func (s *MemoryStore) UpdateStorageConfig(id string, patch domain.StorageConfig)
 	return config, nil
 }
 
-func (s *MemoryStore) DeleteStorageConfig(id string) (domain.StorageConfig, error) {
+func (s *Store) DeleteStorageConfig(id string) (domain.StorageConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	config, ok := s.storageCfg[id]
@@ -546,7 +611,7 @@ func (s *MemoryStore) DeleteStorageConfig(id string) (domain.StorageConfig, erro
 	return config, nil
 }
 
-func (s *MemoryStore) RecordingConfigs() []domain.RecordingConfig {
+func (s *Store) RecordingConfigs() []domain.RecordingConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	configs := make([]domain.RecordingConfig, 0, len(s.recordingCfg))
@@ -556,14 +621,14 @@ func (s *MemoryStore) RecordingConfigs() []domain.RecordingConfig {
 	return configs
 }
 
-func (s *MemoryStore) RecordingConfig(id string) (domain.RecordingConfig, bool) {
+func (s *Store) RecordingConfig(id string) (domain.RecordingConfig, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	config, ok := s.recordingCfg[id]
 	return config, ok
 }
 
-func (s *MemoryStore) DefaultRecordingConfig() (domain.RecordingConfig, bool) {
+func (s *Store) DefaultRecordingConfig() (domain.RecordingConfig, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if config, ok := s.recordingCfg["REC-CFG-001"]; ok {
@@ -575,7 +640,7 @@ func (s *MemoryStore) DefaultRecordingConfig() (domain.RecordingConfig, bool) {
 	return domain.RecordingConfig{}, false
 }
 
-func (s *MemoryStore) CreateRecordingConfig(config domain.RecordingConfig) domain.RecordingConfig {
+func (s *Store) CreateRecordingConfig(config domain.RecordingConfig) domain.RecordingConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -588,7 +653,7 @@ func (s *MemoryStore) CreateRecordingConfig(config domain.RecordingConfig) domai
 	return config
 }
 
-func (s *MemoryStore) UpdateRecordingConfig(id string, patch domain.RecordingConfig) (domain.RecordingConfig, error) {
+func (s *Store) UpdateRecordingConfig(id string, patch domain.RecordingConfig) (domain.RecordingConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	config, ok := s.recordingCfg[id]
@@ -608,7 +673,7 @@ func (s *MemoryStore) UpdateRecordingConfig(id string, patch domain.RecordingCon
 	return config, nil
 }
 
-func (s *MemoryStore) DeleteRecordingConfig(id string) (domain.RecordingConfig, error) {
+func (s *Store) DeleteRecordingConfig(id string) (domain.RecordingConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	config, ok := s.recordingCfg[id]
@@ -619,7 +684,7 @@ func (s *MemoryStore) DeleteRecordingConfig(id string) (domain.RecordingConfig, 
 	return config, nil
 }
 
-func (s *MemoryStore) Calls() []domain.CallSession {
+func (s *Store) Calls() []domain.CallSession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	calls := make([]domain.CallSession, 0, len(s.calls))
@@ -629,7 +694,7 @@ func (s *MemoryStore) Calls() []domain.CallSession {
 	return calls
 }
 
-func (s *MemoryStore) CreateCall(call domain.CallSession) domain.CallSession {
+func (s *Store) CreateCall(call domain.CallSession) domain.CallSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if call.ID == "" {
@@ -643,7 +708,7 @@ func (s *MemoryStore) CreateCall(call domain.CallSession) domain.CallSession {
 	return call
 }
 
-func (s *MemoryStore) UpdateCall(id string, patch domain.CallSession) (domain.CallSession, error) {
+func (s *Store) UpdateCall(id string, patch domain.CallSession) (domain.CallSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	call, ok := s.calls[id]
@@ -669,7 +734,7 @@ func (s *MemoryStore) UpdateCall(id string, patch domain.CallSession) (domain.Ca
 	return call, nil
 }
 
-func (s *MemoryStore) Recordings() []domain.Recording {
+func (s *Store) Recordings() []domain.Recording {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	recordings := make([]domain.Recording, 0, len(s.recordings))
@@ -679,7 +744,7 @@ func (s *MemoryStore) Recordings() []domain.Recording {
 	return recordings
 }
 
-func (s *MemoryStore) CreateRecording(recording domain.Recording) domain.Recording {
+func (s *Store) CreateRecording(recording domain.Recording) domain.Recording {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if recording.ID == "" {
@@ -703,7 +768,7 @@ func (s *MemoryStore) CreateRecording(recording domain.Recording) domain.Recordi
 	return recording
 }
 
-func (s *MemoryStore) ModelProviders() []domain.ModelProvider {
+func (s *Store) ModelProviders() []domain.ModelProvider {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	models := make([]domain.ModelProvider, 0, len(s.models))
@@ -713,14 +778,14 @@ func (s *MemoryStore) ModelProviders() []domain.ModelProvider {
 	return models
 }
 
-func (s *MemoryStore) ModelProvider(id string) (domain.ModelProvider, bool) {
+func (s *Store) ModelProvider(id string) (domain.ModelProvider, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	model, ok := s.models[id]
 	return model, ok
 }
 
-func (s *MemoryStore) CreateModelProvider(provider domain.ModelProvider) domain.ModelProvider {
+func (s *Store) CreateModelProvider(provider domain.ModelProvider) domain.ModelProvider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -733,7 +798,7 @@ func (s *MemoryStore) CreateModelProvider(provider domain.ModelProvider) domain.
 	return provider
 }
 
-func (s *MemoryStore) UpdateModelProvider(id string, patch domain.ModelProvider) (domain.ModelProvider, error) {
+func (s *Store) UpdateModelProvider(id string, patch domain.ModelProvider) (domain.ModelProvider, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	provider, ok := s.models[id]
@@ -752,7 +817,7 @@ func (s *MemoryStore) UpdateModelProvider(id string, patch domain.ModelProvider)
 	return provider, nil
 }
 
-func (s *MemoryStore) DeleteModelProvider(id string) (domain.ModelProvider, error) {
+func (s *Store) DeleteModelProvider(id string) (domain.ModelProvider, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	provider, ok := s.models[id]
@@ -763,7 +828,7 @@ func (s *MemoryStore) DeleteModelProvider(id string) (domain.ModelProvider, erro
 	return provider, nil
 }
 
-func (s *MemoryStore) Analyses() []domain.CallAnalysis {
+func (s *Store) Analyses() []domain.CallAnalysis {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	analyses := make([]domain.CallAnalysis, 0, len(s.analyses))
@@ -773,7 +838,7 @@ func (s *MemoryStore) Analyses() []domain.CallAnalysis {
 	return analyses
 }
 
-func (s *MemoryStore) RealtimeAssistSessions() []domain.RealtimeAssistSession {
+func (s *Store) RealtimeAssistSessions() []domain.RealtimeAssistSession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	sessions := make([]domain.RealtimeAssistSession, 0, len(s.realtime))
@@ -783,7 +848,7 @@ func (s *MemoryStore) RealtimeAssistSessions() []domain.RealtimeAssistSession {
 	return sessions
 }
 
-func (s *MemoryStore) CreateRealtimeAssistSession(session domain.RealtimeAssistSession) domain.RealtimeAssistSession {
+func (s *Store) CreateRealtimeAssistSession(session domain.RealtimeAssistSession) domain.RealtimeAssistSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -799,7 +864,7 @@ func (s *MemoryStore) CreateRealtimeAssistSession(session domain.RealtimeAssistS
 	return session
 }
 
-func (s *MemoryStore) AddRealtimeTranscript(id string, transcript domain.RealtimeTranscript, formPatch map[string]interface{}) (domain.RealtimeAssistSession, error) {
+func (s *Store) AddRealtimeTranscript(id string, transcript domain.RealtimeTranscript, formPatch map[string]interface{}) (domain.RealtimeAssistSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	session, ok := s.realtime[id]
@@ -822,7 +887,7 @@ func (s *MemoryStore) AddRealtimeTranscript(id string, transcript domain.Realtim
 	return session, nil
 }
 
-func (s *MemoryStore) OfflineAnalysisJobs() []domain.OfflineAnalysisJob {
+func (s *Store) OfflineAnalysisJobs() []domain.OfflineAnalysisJob {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	jobs := make([]domain.OfflineAnalysisJob, 0, len(s.offlineJobs))
@@ -832,7 +897,7 @@ func (s *MemoryStore) OfflineAnalysisJobs() []domain.OfflineAnalysisJob {
 	return jobs
 }
 
-func (s *MemoryStore) CreateOfflineAnalysisJob(job domain.OfflineAnalysisJob) domain.OfflineAnalysisJob {
+func (s *Store) CreateOfflineAnalysisJob(job domain.OfflineAnalysisJob) domain.OfflineAnalysisJob {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -848,7 +913,7 @@ func (s *MemoryStore) CreateOfflineAnalysisJob(job domain.OfflineAnalysisJob) do
 	return job
 }
 
-func (s *MemoryStore) Interviews() []domain.InterviewSession {
+func (s *Store) Interviews() []domain.InterviewSession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	interviews := make([]domain.InterviewSession, 0, len(s.interviews))
@@ -858,7 +923,7 @@ func (s *MemoryStore) Interviews() []domain.InterviewSession {
 	return interviews
 }
 
-func (s *MemoryStore) CreateInterview(interview domain.InterviewSession) domain.InterviewSession {
+func (s *Store) CreateInterview(interview domain.InterviewSession) domain.InterviewSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -874,7 +939,7 @@ func (s *MemoryStore) CreateInterview(interview domain.InterviewSession) domain.
 	return interview
 }
 
-func (s *MemoryStore) UserByUsername(username string) (domain.User, bool) {
+func (s *Store) UserByUsername(username string) (domain.User, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, user := range s.users {
@@ -885,14 +950,14 @@ func (s *MemoryStore) UserByUsername(username string) (domain.User, bool) {
 	return domain.User{}, false
 }
 
-func (s *MemoryStore) UserByID(id string) (domain.User, bool) {
+func (s *Store) UserByID(id string) (domain.User, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	user, ok := s.users[id]
 	return user, ok
 }
 
-func (s *MemoryStore) Users() []domain.User {
+func (s *Store) Users() []domain.User {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	users := make([]domain.User, 0, len(s.users))
@@ -902,7 +967,7 @@ func (s *MemoryStore) Users() []domain.User {
 	return users
 }
 
-func (s *MemoryStore) CreateUser(user domain.User) domain.User {
+func (s *Store) CreateUser(user domain.User) domain.User {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -913,7 +978,7 @@ func (s *MemoryStore) CreateUser(user domain.User) domain.User {
 	return user
 }
 
-func (s *MemoryStore) UpdateUser(id string, patch domain.User) (domain.User, error) {
+func (s *Store) UpdateUser(id string, patch domain.User) (domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
@@ -933,7 +998,7 @@ func (s *MemoryStore) UpdateUser(id string, patch domain.User) (domain.User, err
 	return user, nil
 }
 
-func (s *MemoryStore) DeleteUser(id string) (domain.User, error) {
+func (s *Store) DeleteUser(id string) (domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
@@ -950,7 +1015,10 @@ func (s *MemoryStore) DeleteUser(id string) (domain.User, error) {
 	return user, nil
 }
 
-func (s *MemoryStore) Patients(keyword string) []domain.Patient {
+func (s *Store) Patients(keyword string) []domain.Patient {
+	if patients, err := s.dbPatients(context.Background(), keyword); err == nil {
+		return patients
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	keyword = strings.TrimSpace(strings.ToLower(keyword))
@@ -968,14 +1036,20 @@ func (s *MemoryStore) Patients(keyword string) []domain.Patient {
 	return patients
 }
 
-func (s *MemoryStore) Patient(id string) (domain.Patient, bool) {
+func (s *Store) Patient(id string) (domain.Patient, bool) {
+	if patient, ok, err := s.dbPatient(context.Background(), id); err == nil {
+		return patient, ok
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	patient, ok := s.patients[id]
 	return patient, ok
 }
 
-func (s *MemoryStore) CreatePatient(patient domain.Patient) domain.Patient {
+func (s *Store) CreatePatient(patient domain.Patient) domain.Patient {
+	if created, err := s.dbCreatePatient(context.Background(), patient); err == nil {
+		return created
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -991,7 +1065,10 @@ func (s *MemoryStore) CreatePatient(patient domain.Patient) domain.Patient {
 	return patient
 }
 
-func (s *MemoryStore) UpdatePatient(id string, patch domain.Patient) (domain.Patient, error) {
+func (s *Store) UpdatePatient(id string, patch domain.Patient) (domain.Patient, error) {
+	if updated, err := s.dbUpdatePatient(context.Background(), id, patch); err == nil || err == ErrNotFound {
+		return updated, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	patient, ok := s.patients[id]
@@ -1066,7 +1143,10 @@ func (s *MemoryStore) UpdatePatient(id string, patch domain.Patient) (domain.Pat
 	return patient, nil
 }
 
-func (s *MemoryStore) UpsertPatientByNo(patient domain.Patient) (domain.Patient, bool) {
+func (s *Store) UpsertPatientByNo(patient domain.Patient) (domain.Patient, bool) {
+	if saved, created, err := s.dbUpsertPatientByNo(context.Background(), patient); err == nil {
+		return saved, created
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1094,7 +1174,10 @@ func (s *MemoryStore) UpsertPatientByNo(patient domain.Patient) (domain.Patient,
 	return patient, true
 }
 
-func (s *MemoryStore) Visits(patientID string) []domain.ClinicalVisit {
+func (s *Store) Visits(patientID string) []domain.ClinicalVisit {
+	if visits, err := s.dbVisits(context.Background(), patientID); err == nil {
+		return visits
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	visits := make([]domain.ClinicalVisit, 0, len(s.visits))
@@ -1106,7 +1189,10 @@ func (s *MemoryStore) Visits(patientID string) []domain.ClinicalVisit {
 	return visits
 }
 
-func (s *MemoryStore) UpsertVisitByNo(visit domain.ClinicalVisit) (domain.ClinicalVisit, bool) {
+func (s *Store) UpsertVisitByNo(visit domain.ClinicalVisit) (domain.ClinicalVisit, bool) {
+	if saved, created, err := s.dbUpsertVisitByNo(context.Background(), visit); err == nil {
+		return saved, created
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1134,7 +1220,7 @@ func (s *MemoryStore) UpsertVisitByNo(visit domain.ClinicalVisit) (domain.Clinic
 	return visit, true
 }
 
-func (s *MemoryStore) MedicalRecords(patientID string) []domain.MedicalRecord {
+func (s *Store) MedicalRecords(patientID string) []domain.MedicalRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	records := make([]domain.MedicalRecord, 0, len(s.records))
@@ -1146,7 +1232,7 @@ func (s *MemoryStore) MedicalRecords(patientID string) []domain.MedicalRecord {
 	return records
 }
 
-func (s *MemoryStore) UpsertMedicalRecordByNo(record domain.MedicalRecord) (domain.MedicalRecord, bool) {
+func (s *Store) UpsertMedicalRecordByNo(record domain.MedicalRecord) (domain.MedicalRecord, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1168,7 +1254,7 @@ func (s *MemoryStore) UpsertMedicalRecordByNo(record domain.MedicalRecord) (doma
 	return record, true
 }
 
-func (s *MemoryStore) Datasets(keyword string) []domain.Dataset {
+func (s *Store) Datasets(keyword string) []domain.Dataset {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	keyword = strings.TrimSpace(strings.ToLower(keyword))
@@ -1185,14 +1271,14 @@ func (s *MemoryStore) Datasets(keyword string) []domain.Dataset {
 	return datasets
 }
 
-func (s *MemoryStore) Dataset(id string) (domain.Dataset, bool) {
+func (s *Store) Dataset(id string) (domain.Dataset, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	dataset, ok := s.datasets[id]
 	return dataset, ok
 }
 
-func (s *MemoryStore) CreateDataset(dataset domain.Dataset) domain.Dataset {
+func (s *Store) CreateDataset(dataset domain.Dataset) domain.Dataset {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1208,7 +1294,7 @@ func (s *MemoryStore) CreateDataset(dataset domain.Dataset) domain.Dataset {
 	return dataset
 }
 
-func (s *MemoryStore) UpdateDataset(id string, patch domain.Dataset) (domain.Dataset, error) {
+func (s *Store) UpdateDataset(id string, patch domain.Dataset) (domain.Dataset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	dataset, ok := s.datasets[id]
@@ -1229,7 +1315,7 @@ func (s *MemoryStore) UpdateDataset(id string, patch domain.Dataset) (domain.Dat
 	return dataset, nil
 }
 
-func (s *MemoryStore) DeleteDataset(id string) (domain.Dataset, error) {
+func (s *Store) DeleteDataset(id string) (domain.Dataset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	dataset, ok := s.datasets[id]
@@ -1240,7 +1326,7 @@ func (s *MemoryStore) DeleteDataset(id string) (domain.Dataset, error) {
 	return dataset, nil
 }
 
-func (s *MemoryStore) Roles() []domain.Role {
+func (s *Store) Roles() []domain.Role {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	roles := make([]domain.Role, 0, len(s.roles))
@@ -1250,7 +1336,7 @@ func (s *MemoryStore) Roles() []domain.Role {
 	return roles
 }
 
-func (s *MemoryStore) CreateRole(role domain.Role) domain.Role {
+func (s *Store) CreateRole(role domain.Role) domain.Role {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if role.ID == "" {
@@ -1260,7 +1346,7 @@ func (s *MemoryStore) CreateRole(role domain.Role) domain.Role {
 	return role
 }
 
-func (s *MemoryStore) UpdateRolePermissions(id string, permissions []string) (domain.Role, error) {
+func (s *Store) UpdateRolePermissions(id string, permissions []string) (domain.Role, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[id]
@@ -1272,7 +1358,7 @@ func (s *MemoryStore) UpdateRolePermissions(id string, permissions []string) (do
 	return role, nil
 }
 
-func (s *MemoryStore) SaveAudit(log domain.AuditLog) {
+func (s *Store) SaveAudit(log domain.AuditLog) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	log.ID = uuid.NewString()
@@ -1280,7 +1366,7 @@ func (s *MemoryStore) SaveAudit(log domain.AuditLog) {
 	s.auditLogs = append(s.auditLogs, log)
 }
 
-func (s *MemoryStore) AuditLogs() []domain.AuditLog {
+func (s *Store) AuditLogs() []domain.AuditLog {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	logs := make([]domain.AuditLog, len(s.auditLogs))
@@ -1288,7 +1374,7 @@ func (s *MemoryStore) AuditLogs() []domain.AuditLog {
 	return logs
 }
 
-func (s *MemoryStore) Forms() []domain.Form {
+func (s *Store) Forms() []domain.Form {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	forms := make([]domain.Form, 0, len(s.forms))
@@ -1298,7 +1384,7 @@ func (s *MemoryStore) Forms() []domain.Form {
 	return forms
 }
 
-func (s *MemoryStore) CreateForm(form domain.Form) domain.Form {
+func (s *Store) CreateForm(form domain.Form) domain.Form {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1310,7 +1396,7 @@ func (s *MemoryStore) CreateForm(form domain.Form) domain.Form {
 	return form
 }
 
-func (s *MemoryStore) CreateFormVersion(formID, actor string, schema []domain.FormComponent) (domain.FormVersion, error) {
+func (s *Store) CreateFormVersion(formID, actor string, schema []domain.FormComponent) (domain.FormVersion, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	form, ok := s.forms[formID]
@@ -1331,7 +1417,7 @@ func (s *MemoryStore) CreateFormVersion(formID, actor string, schema []domain.Fo
 	return version, nil
 }
 
-func (s *MemoryStore) PublishForm(formID string) (domain.Form, error) {
+func (s *Store) PublishForm(formID string) (domain.Form, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	form, ok := s.forms[formID]
@@ -1352,7 +1438,7 @@ func (s *MemoryStore) PublishForm(formID string) (domain.Form, error) {
 	return form, nil
 }
 
-func (s *MemoryStore) CreateSubmission(submission domain.Submission) (domain.Submission, error) {
+func (s *Store) CreateSubmission(submission domain.Submission) (domain.Submission, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	form, ok := s.forms[submission.FormID]
@@ -1371,7 +1457,7 @@ func (s *MemoryStore) CreateSubmission(submission domain.Submission) (domain.Sub
 	return submission, nil
 }
 
-func (s *MemoryStore) SubmissionsByForm(formID string) []domain.Submission {
+func (s *Store) SubmissionsByForm(formID string) []domain.Submission {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	submissions := []domain.Submission{}
@@ -1383,14 +1469,14 @@ func (s *MemoryStore) SubmissionsByForm(formID string) []domain.Submission {
 	return submissions
 }
 
-func (s *MemoryStore) Submission(id string) (domain.Submission, bool) {
+func (s *Store) Submission(id string) (domain.Submission, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	submission, ok := s.submissions[id]
 	return submission, ok
 }
 
-func (s *MemoryStore) DataSources() []domain.DataSource {
+func (s *Store) DataSources() []domain.DataSource {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	sources := make([]domain.DataSource, 0, len(s.dataSources))
@@ -1400,7 +1486,7 @@ func (s *MemoryStore) DataSources() []domain.DataSource {
 	return sources
 }
 
-func (s *MemoryStore) CreateDataSource(source domain.DataSource) domain.DataSource {
+func (s *Store) CreateDataSource(source domain.DataSource) domain.DataSource {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1411,14 +1497,14 @@ func (s *MemoryStore) CreateDataSource(source domain.DataSource) domain.DataSour
 	return source
 }
 
-func (s *MemoryStore) DataSource(id string) (domain.DataSource, bool) {
+func (s *Store) DataSource(id string) (domain.DataSource, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	source, ok := s.dataSources[id]
 	return source, ok
 }
 
-func (s *MemoryStore) UpdateDataSource(id string, patch domain.DataSource) (domain.DataSource, error) {
+func (s *Store) UpdateDataSource(id string, patch domain.DataSource) (domain.DataSource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	source, ok := s.dataSources[id]
@@ -1448,7 +1534,7 @@ func (s *MemoryStore) UpdateDataSource(id string, patch domain.DataSource) (doma
 	return source, nil
 }
 
-func (s *MemoryStore) DeleteDataSource(id string) (domain.DataSource, error) {
+func (s *Store) DeleteDataSource(id string) (domain.DataSource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	source, ok := s.dataSources[id]
@@ -1459,7 +1545,7 @@ func (s *MemoryStore) DeleteDataSource(id string) (domain.DataSource, error) {
 	return source, nil
 }
 
-func (s *MemoryStore) Reports() []domain.Report {
+func (s *Store) Reports() []domain.Report {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	reports := make([]domain.Report, 0, len(s.reports))
@@ -1469,14 +1555,14 @@ func (s *MemoryStore) Reports() []domain.Report {
 	return reports
 }
 
-func (s *MemoryStore) Report(id string) (domain.Report, bool) {
+func (s *Store) Report(id string) (domain.Report, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	report, ok := s.reports[id]
 	return report, ok
 }
 
-func (s *MemoryStore) CreateReport(report domain.Report) domain.Report {
+func (s *Store) CreateReport(report domain.Report) domain.Report {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1487,7 +1573,7 @@ func (s *MemoryStore) CreateReport(report domain.Report) domain.Report {
 	return report
 }
 
-func (s *MemoryStore) UpdateReport(id string, patch domain.Report) (domain.Report, error) {
+func (s *Store) UpdateReport(id string, patch domain.Report) (domain.Report, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	report, ok := s.reports[id]
@@ -1505,7 +1591,7 @@ func (s *MemoryStore) UpdateReport(id string, patch domain.Report) (domain.Repor
 	return report, nil
 }
 
-func (s *MemoryStore) AddReportWidget(reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
+func (s *Store) AddReportWidget(reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	report, ok := s.reports[reportID]
@@ -1521,7 +1607,7 @@ func (s *MemoryStore) AddReportWidget(reportID string, widget domain.ReportWidge
 	return widget, nil
 }
 
-func (s *MemoryStore) QueryReport(reportID string) (map[string]interface{}, error) {
+func (s *Store) QueryReport(reportID string) (map[string]interface{}, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if _, ok := s.reports[reportID]; !ok {

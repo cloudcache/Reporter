@@ -11,6 +11,7 @@ export interface CurrentUser {
   username: string
   displayName: string
   roles: string[]
+  permissions?: string[]
 }
 
 let pendingAuthCheck: Promise<CurrentUser> | null = null

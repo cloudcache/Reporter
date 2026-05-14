@@ -12,7 +12,7 @@ import (
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) complaintDB(ctx context.Context) (*sql.DB, error) {
+func (s *Store) complaintDB(ctx context.Context) (*sql.DB, error) {
 	s.mu.RLock()
 	driver, dsn := s.dbDriver, s.dbDSN
 	s.mu.RUnlock()
@@ -33,7 +33,7 @@ func (s *MemoryStore) complaintDB(ctx context.Context) (*sql.DB, error) {
 	return db, nil
 }
 
-func (s *MemoryStore) EnsureEvaluationComplaintTables(ctx context.Context) error {
+func (s *Store) EnsureEvaluationComplaintTables(ctx context.Context) error {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func (s *MemoryStore) EnsureEvaluationComplaintTables(ctx context.Context) error
 	return nil
 }
 
-func (s *MemoryStore) EvaluationComplaints(ctx context.Context, status, kind string) ([]domain.EvaluationComplaint, error) {
+func (s *Store) EvaluationComplaints(ctx context.Context, status, kind string) ([]domain.EvaluationComplaint, error) {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ ORDER BY created_at DESC`, args...)
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) CreateEvaluationComplaint(ctx context.Context, item domain.EvaluationComplaint) (domain.EvaluationComplaint, error) {
+func (s *Store) CreateEvaluationComplaint(ctx context.Context, item domain.EvaluationComplaint) (domain.EvaluationComplaint, error) {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return domain.EvaluationComplaint{}, err
@@ -176,7 +176,7 @@ INSERT INTO evaluation_complaints (
 	return s.EvaluationComplaint(ctx, item.ID)
 }
 
-func (s *MemoryStore) EvaluationComplaint(ctx context.Context, id string) (domain.EvaluationComplaint, error) {
+func (s *Store) EvaluationComplaint(ctx context.Context, id string) (domain.EvaluationComplaint, error) {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return domain.EvaluationComplaint{}, err
@@ -198,7 +198,7 @@ WHERE id = ?`, id)
 	return item, err
 }
 
-func (s *MemoryStore) UpdateEvaluationComplaint(ctx context.Context, id string, patch domain.EvaluationComplaint, actorID string) (domain.EvaluationComplaint, error) {
+func (s *Store) UpdateEvaluationComplaint(ctx context.Context, id string, patch domain.EvaluationComplaint, actorID string) (domain.EvaluationComplaint, error) {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return domain.EvaluationComplaint{}, err
@@ -253,7 +253,7 @@ WHERE id = ?`,
 	return s.EvaluationComplaint(ctx, id)
 }
 
-func (s *MemoryStore) DeleteEvaluationComplaint(ctx context.Context, id, actorID string) error {
+func (s *Store) DeleteEvaluationComplaint(ctx context.Context, id, actorID string) error {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return err
@@ -268,7 +268,7 @@ func (s *MemoryStore) DeleteEvaluationComplaint(ctx context.Context, id, actorID
 	return insertComplaintEvent(ctx, db, id, actorID, "delete", "删除评价投诉", map[string]string{"id": id})
 }
 
-func (s *MemoryStore) EvaluationComplaintStats(ctx context.Context) (map[string]interface{}, error) {
+func (s *Store) EvaluationComplaintStats(ctx context.Context) (map[string]interface{}, error) {
 	db, err := s.complaintDB(ctx)
 	if err != nil {
 		return nil, err

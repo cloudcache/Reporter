@@ -39,6 +39,7 @@ export function ReportChart({ data, xField = "month", yField = "submissions", ti
         chart.renderSync()
         setError("")
       } catch (nextError) {
+        console.warn("VChart render failed, using HTML fallback", nextError)
         setError(nextError instanceof Error ? nextError.message : "图表渲染失败")
       }
     }
@@ -53,18 +54,15 @@ export function ReportChart({ data, xField = "month", yField = "submissions", ti
     return <div className="grid h-[380px] w-full place-items-center rounded-lg border border-line bg-surface p-3 text-sm text-muted">暂无可绘制的数据</div>
   }
   if (error) {
-    return <FallbackChart data={data} xField={xField} yField={yField} title={title} error={error} />
+    return <FallbackChart data={data} xField={xField} yField={yField} title={title} />
   }
   return <div ref={ref} className="h-[380px] w-full rounded-lg border border-line bg-surface p-3" />
 }
 
-function FallbackChart({ data, xField, yField, title, error }: { data: Row[]; xField: string; yField: string; title: string; error: string }) {
+function FallbackChart({ data, xField, yField, title }: { data: Row[]; xField: string; yField: string; title: string }) {
   const max = Math.max(...data.map((row) => Number(row[yField] || 0)), 1)
   return <div className="rounded-lg border border-line bg-surface p-4">
-    <div className="mb-3 flex items-center justify-between gap-3">
-      <h2 className="text-base font-semibold">{title}</h2>
-      <span className="text-xs text-amber-600">VChart 降级渲染：{error}</span>
-    </div>
+    <h2 className="mb-3 break-words text-base font-semibold">{title}</h2>
     <div className="grid gap-2">
       {data.map((row, index) => {
         const value = Number(row[yField] || 0)

@@ -7,7 +7,7 @@ import (
 )
 
 func TestFormPublishAndSubmission(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewTestStore()
 	form := s.CreateForm(domain.Form{Name: "Intake"})
 	version, err := s.CreateFormVersion(form.ID, "1", []domain.FormComponent{{ID: "name", Type: "text", Label: "Name", Required: true}})
 	if err != nil {
@@ -30,7 +30,7 @@ func TestFormPublishAndSubmission(t *testing.T) {
 }
 
 func TestDataSourceUpdateAndDelete(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewTestStore()
 	source := s.CreateDataSource(domain.DataSource{Name: "HIS", Protocol: "http", Endpoint: "https://his.local"})
 	updated, err := s.UpdateDataSource(source.ID, domain.DataSource{Name: "HIS API", Config: map[string]interface{}{"timeoutMs": 2000}})
 	if err != nil {
@@ -52,7 +52,7 @@ func TestDataSourceUpdateAndDelete(t *testing.T) {
 }
 
 func TestPatientSearchAndUpdate(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewTestStore()
 	results := s.Patients("张三")
 	if len(results) != 1 || results[0].Name != "张三" {
 		t.Fatal("expected patient search to find 张三")
@@ -67,7 +67,7 @@ func TestPatientSearchAndUpdate(t *testing.T) {
 }
 
 func TestDatasetSearchAndUpdate(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewTestStore()
 	results := s.Datasets("高血压")
 	if len(results) != 1 || results[0].ID != "DS001" {
 		t.Fatal("expected dataset search to find DS001")
@@ -92,7 +92,7 @@ func TestDatasetSearchAndUpdate(t *testing.T) {
 }
 
 func TestReportQueryAndWidget(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewTestStore()
 	result, err := s.QueryReport("RP001")
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestReportQueryAndWidget(t *testing.T) {
 }
 
 func TestCallCenterSeedsAndCreate(t *testing.T) {
-	s := NewMemoryStore()
+	s := NewTestStore()
 	if len(s.Seats()) == 0 || len(s.SipEndpoints()) == 0 {
 		t.Fatal("expected seeded seats and sip endpoints")
 	}

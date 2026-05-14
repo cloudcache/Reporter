@@ -16,7 +16,7 @@ import (
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) surveyDB(ctx context.Context) (*sql.DB, error) {
+func (s *Store) surveyDB(ctx context.Context) (*sql.DB, error) {
 	s.mu.RLock()
 	driver, dsn := s.dbDriver, s.dbDSN
 	s.mu.RUnlock()
@@ -37,7 +37,7 @@ func (s *MemoryStore) surveyDB(ctx context.Context) (*sql.DB, error) {
 	return db, nil
 }
 
-func (s *MemoryStore) EnsureSurveyChannelTables(ctx context.Context) error {
+func (s *Store) EnsureSurveyChannelTables(ctx context.Context) error {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return err
@@ -80,6 +80,26 @@ func (s *MemoryStore) EnsureSurveyChannelTables(ctx context.Context) error {
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_survey_interviews_share (share_id),
   CONSTRAINT fk_survey_interviews_share FOREIGN KEY (share_id) REFERENCES survey_share_links(id)
+)`,
+		`CREATE TABLE IF NOT EXISTS survey_channel_deliveries (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NULL,
+  share_id CHAR(36) NOT NULL,
+  channel VARCHAR(40) NOT NULL,
+  recipient VARCHAR(180) NOT NULL,
+  recipient_name VARCHAR(120) NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'queued',
+  message TEXT NULL,
+  error TEXT NULL,
+  provider_ref VARCHAR(180) NULL,
+  config_json JSON NULL,
+  sent_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_survey_deliveries_project (project_id),
+  INDEX idx_survey_deliveries_share (share_id),
+  INDEX idx_survey_deliveries_status (status),
+  INDEX idx_survey_deliveries_recipient (recipient)
 )`,
 		`CREATE TABLE IF NOT EXISTS satisfaction_projects (
   id CHAR(36) PRIMARY KEY,
@@ -286,8 +306,10 @@ func ensureIndex(ctx context.Context, db *sql.DB, table, index, column string) e
 
 func seedIntegrationChannels(ctx context.Context, db *sql.DB) error {
 	defaults := []domain.IntegrationChannel{
-		{ID: "CHAN-SMS", Kind: "sms", Name: "短信接口", Endpoint: "https://sms.example.local/send", CredentialRef: "secret://sms/default", Enabled: true, Config: map[string]interface{}{"signature": "医院", "templateMode": true}},
-		{ID: "CHAN-WECHAT", Kind: "wechat", Name: "微信公众号接口", Endpoint: "https://api.weixin.qq.com", AppID: "wx-app-id", CredentialRef: "secret://wechat/default", Enabled: true, Config: map[string]interface{}{"messageType": "template"}},
+		{ID: "CHAN-SMS", Kind: "sms", Name: "阿里云短信", Endpoint: "https://dysmsapi.aliyuncs.com", CredentialRef: "secret://aliyun-sms/default", Enabled: true, Config: map[string]interface{}{"provider": "aliyun_sms", "regionId": "cn-hangzhou", "signName": "", "templateCode": "", "templateParamKeys": []string{"name", "url", "message"}}},
+		{ID: "CHAN-WECHAT", Kind: "wechat", Name: "微信公众号模板消息", Endpoint: "https://api.weixin.qq.com", AppID: "", CredentialRef: "secret://wechat-official/default", Enabled: true, Config: map[string]interface{}{"provider": "wechat_official", "templateId": "", "pagePath": "pages/survey/index"}},
+		{ID: "CHAN-WEWORK", Kind: "wework", Name: "企业微信应用消息", Endpoint: "https://qyapi.weixin.qq.com", AppID: "", CredentialRef: "secret://wework/default", Enabled: false, Config: map[string]interface{}{"provider": "wework", "templateId": "", "agentId": ""}},
+		{ID: "CHAN-MINIPROGRAM", Kind: "mini_program", Name: "微信小程序订阅消息", Endpoint: "https://api.weixin.qq.com", AppID: "", CredentialRef: "secret://wechat-mini-program/default", Enabled: false, Config: map[string]interface{}{"provider": "wechat_mini_program", "templateId": "", "pagePath": "pages/survey/index"}},
 		{ID: "CHAN-QQ", Kind: "qq", Name: "QQ 分享接口", Endpoint: "https://connect.qq.com", AppID: "qq-app-id", CredentialRef: "secret://qq/default", Enabled: false, Config: map[string]interface{}{}},
 		{ID: "CHAN-WEB", Kind: "web", Name: "Web 链接", Endpoint: "http://127.0.0.1:4321/survey", Enabled: true, Config: map[string]interface{}{"allowAnonymous": true}},
 	}
@@ -306,7 +328,7 @@ VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?)`,
 	return nil
 }
 
-func (s *MemoryStore) IntegrationChannels(ctx context.Context) ([]domain.IntegrationChannel, error) {
+func (s *Store) IntegrationChannels(ctx context.Context) ([]domain.IntegrationChannel, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -333,7 +355,7 @@ func (s *MemoryStore) IntegrationChannels(ctx context.Context) ([]domain.Integra
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertIntegrationChannel(ctx context.Context, item domain.IntegrationChannel) (domain.IntegrationChannel, error) {
+func (s *Store) UpsertIntegrationChannel(ctx context.Context, item domain.IntegrationChannel) (domain.IntegrationChannel, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.IntegrationChannel{}, err
@@ -360,7 +382,7 @@ ON DUPLICATE KEY UPDATE kind=VALUES(kind), name=VALUES(name), endpoint=VALUES(en
 	return item, err
 }
 
-func (s *MemoryStore) SurveyShareLinks(ctx context.Context) ([]domain.SurveyShareLink, error) {
+func (s *Store) SurveyShareLinks(ctx context.Context) ([]domain.SurveyShareLink, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -388,7 +410,7 @@ func (s *MemoryStore) SurveyShareLinks(ctx context.Context) ([]domain.SurveyShar
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) CreateSurveyShareLink(ctx context.Context, item domain.SurveyShareLink) (domain.SurveyShareLink, error) {
+func (s *Store) CreateSurveyShareLink(ctx context.Context, item domain.SurveyShareLink) (domain.SurveyShareLink, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SurveyShareLink{}, err
@@ -415,7 +437,7 @@ func (s *MemoryStore) CreateSurveyShareLink(ctx context.Context, item domain.Sur
 	return item, nil
 }
 
-func (s *MemoryStore) SurveyShareByToken(ctx context.Context, token string) (domain.SurveyShareLink, error) {
+func (s *Store) SurveyShareByToken(ctx context.Context, token string) (domain.SurveyShareLink, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SurveyShareLink{}, err
@@ -435,7 +457,132 @@ func (s *MemoryStore) SurveyShareByToken(ctx context.Context, token string) (dom
 	return item, nil
 }
 
-func (s *MemoryStore) CreateSurveyInterview(ctx context.Context, shareID, patientID string) (domain.SurveyInterview, error) {
+func (s *Store) SurveyChannelDeliveries(ctx context.Context, projectID string) ([]domain.SurveyChannelDelivery, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := s.EnsureSurveyChannelTables(ctx); err != nil {
+		return nil, err
+	}
+	query := `SELECT id, COALESCE(project_id, ''), share_id, channel, recipient, COALESCE(recipient_name, ''), status, COALESCE(message, ''), COALESCE(error, ''), COALESCE(provider_ref, ''), COALESCE(CAST(config_json AS CHAR), '{}'), COALESCE(DATE_FORMAT(sent_at, '%Y-%m-%d %H:%i:%s'), ''), created_at, updated_at FROM survey_channel_deliveries`
+	args := []interface{}{}
+	if strings.TrimSpace(projectID) != "" {
+		query += ` WHERE project_id = ?`
+		args = append(args, projectID)
+	}
+	query += ` ORDER BY created_at DESC LIMIT 500`
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.SurveyChannelDelivery{}
+	for rows.Next() {
+		var item domain.SurveyChannelDelivery
+		var raw string
+		if err := rows.Scan(&item.ID, &item.ProjectID, &item.ShareID, &item.Channel, &item.Recipient, &item.RecipientName, &item.Status, &item.Message, &item.Error, &item.ProviderRef, &raw, &item.SentAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(raw), &item.Config)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) SurveyChannelDelivery(ctx context.Context, id string) (domain.SurveyChannelDelivery, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return domain.SurveyChannelDelivery{}, err
+	}
+	defer db.Close()
+	if err := s.EnsureSurveyChannelTables(ctx); err != nil {
+		return domain.SurveyChannelDelivery{}, err
+	}
+	var item domain.SurveyChannelDelivery
+	var raw string
+	err = db.QueryRowContext(ctx, `SELECT id, COALESCE(project_id, ''), share_id, channel, recipient, COALESCE(recipient_name, ''), status, COALESCE(message, ''), COALESCE(error, ''), COALESCE(provider_ref, ''), COALESCE(CAST(config_json AS CHAR), '{}'), COALESCE(DATE_FORMAT(sent_at, '%Y-%m-%d %H:%i:%s'), ''), created_at, updated_at FROM survey_channel_deliveries WHERE id = ?`, id).Scan(&item.ID, &item.ProjectID, &item.ShareID, &item.Channel, &item.Recipient, &item.RecipientName, &item.Status, &item.Message, &item.Error, &item.ProviderRef, &raw, &item.SentAt, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return item, ErrNotFound
+	}
+	if err != nil {
+		return item, err
+	}
+	_ = json.Unmarshal([]byte(raw), &item.Config)
+	return item, nil
+}
+
+func (s *Store) UpdateSurveyChannelDelivery(ctx context.Context, item domain.SurveyChannelDelivery) (domain.SurveyChannelDelivery, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return domain.SurveyChannelDelivery{}, err
+	}
+	defer db.Close()
+	if err := s.EnsureSurveyChannelTables(ctx); err != nil {
+		return domain.SurveyChannelDelivery{}, err
+	}
+	raw, err := json.Marshal(item.Config)
+	if err != nil {
+		return domain.SurveyChannelDelivery{}, err
+	}
+	if string(raw) == "null" {
+		raw = []byte("{}")
+	}
+	var sentAt interface{}
+	if strings.TrimSpace(item.SentAt) != "" {
+		sentAt = item.SentAt
+	}
+	_, err = db.ExecContext(ctx, `UPDATE survey_channel_deliveries SET status = ?, error = NULLIF(?, ''), provider_ref = NULLIF(?, ''), config_json = CAST(? AS JSON), sent_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		item.Status, item.Error, item.ProviderRef, string(raw), sentAt, item.ID)
+	if err != nil {
+		return domain.SurveyChannelDelivery{}, err
+	}
+	return s.SurveyChannelDelivery(ctx, item.ID)
+}
+
+func (s *Store) CreateSurveyChannelDeliveries(ctx context.Context, items []domain.SurveyChannelDelivery) ([]domain.SurveyChannelDelivery, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := s.EnsureSurveyChannelTables(ctx); err != nil {
+		return nil, err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	saved := []domain.SurveyChannelDelivery{}
+	for _, item := range items {
+		if item.ID == "" {
+			item.ID = uuid.NewString()
+		}
+		item.Status = firstNonEmptyStore(item.Status, "queued")
+		raw, _ := json.Marshal(item.Config)
+		if string(raw) == "null" {
+			raw = []byte("{}")
+		}
+		var sentAt interface{}
+		if strings.TrimSpace(item.SentAt) != "" {
+			sentAt = item.SentAt
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO survey_channel_deliveries (id, project_id, share_id, channel, recipient, recipient_name, status, message, error, provider_ref, config_json, sent_at) VALUES (?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), ?)`,
+			item.ID, item.ProjectID, item.ShareID, item.Channel, item.Recipient, item.RecipientName, item.Status, item.Message, item.Error, item.ProviderRef, string(raw), sentAt)
+		if err != nil {
+			return nil, err
+		}
+		item.CreatedAt = now
+		item.UpdatedAt = now
+		saved = append(saved, item)
+	}
+	return saved, tx.Commit()
+}
+
+func (s *Store) CreateSurveyInterview(ctx context.Context, shareID, patientID string) (domain.SurveyInterview, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SurveyInterview{}, err
@@ -446,7 +593,7 @@ func (s *MemoryStore) CreateSurveyInterview(ctx context.Context, shareID, patien
 	return item, err
 }
 
-func (s *MemoryStore) SatisfactionProjects(ctx context.Context) ([]domain.SatisfactionProject, error) {
+func (s *Store) SatisfactionProjects(ctx context.Context) ([]domain.SatisfactionProject, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -460,6 +607,7 @@ SELECT p.id, p.name, p.target_type, p.form_template_id, COALESCE(DATE_FORMAT(p.s
        p.target_sample_size, COUNT(s.id), p.anonymous, p.requires_verification, p.status, COALESCE(CAST(p.config_json AS CHAR), '{}'), p.created_at, p.updated_at
 FROM satisfaction_projects p
 LEFT JOIN survey_submissions s ON s.project_id = p.id
+WHERE p.status <> 'deleted'
 GROUP BY p.id
 ORDER BY p.created_at DESC`)
 	if err != nil {
@@ -479,7 +627,7 @@ ORDER BY p.created_at DESC`)
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertSatisfactionProject(ctx context.Context, item domain.SatisfactionProject) (domain.SatisfactionProject, error) {
+func (s *Store) UpsertSatisfactionProject(ctx context.Context, item domain.SatisfactionProject) (domain.SatisfactionProject, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SatisfactionProject{}, err
@@ -511,7 +659,36 @@ ON DUPLICATE KEY UPDATE name=VALUES(name), target_type=VALUES(target_type), form
 	return item, nil
 }
 
-func (s *MemoryStore) CreateSurveySubmission(ctx context.Context, item domain.SurveySubmission, components []map[string]interface{}) (domain.SurveySubmission, error) {
+func (s *Store) DeleteSatisfactionProject(ctx context.Context, id string) (domain.SatisfactionProject, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return domain.SatisfactionProject{}, err
+	}
+	defer db.Close()
+	if err := s.EnsureSurveyChannelTables(ctx); err != nil {
+		return domain.SatisfactionProject{}, err
+	}
+	items, err := s.SatisfactionProjects(ctx)
+	if err != nil {
+		return domain.SatisfactionProject{}, err
+	}
+	var deleted domain.SatisfactionProject
+	for _, item := range items {
+		if item.ID == id {
+			deleted = item
+			break
+		}
+	}
+	if deleted.ID == "" {
+		return domain.SatisfactionProject{}, ErrNotFound
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE satisfaction_projects SET status = 'deleted' WHERE id = ?`, id); err != nil {
+		return domain.SatisfactionProject{}, err
+	}
+	return deleted, nil
+}
+
+func (s *Store) CreateSurveySubmission(ctx context.Context, item domain.SurveySubmission, components []map[string]interface{}) (domain.SurveySubmission, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SurveySubmission{}, err
@@ -522,14 +699,7 @@ func (s *MemoryStore) CreateSurveySubmission(ctx context.Context, item domain.Su
 	}
 	item.ID = uuid.NewString()
 	item.Status = firstNonEmptyStore(item.Status, "submitted")
-	item.QualityStatus = qualityStatus(item)
-	if reasons := cleaningReasons(item); len(reasons) > 0 {
-		item.QualityReason = strings.Join(reasons, "；")
-	}
-	if duplicate, reason := s.duplicateSubmission(ctx, db, item); duplicate {
-		item.QualityStatus = "suspicious"
-		item.QualityReason = firstNonEmptyStore(item.QualityReason, reason)
-	}
+	item.QualityStatus, item.QualityReason = s.evaluateSurveySubmissionQuality(ctx, db, item)
 	raw, err := json.Marshal(item.Answers)
 	if err != nil {
 		return item, err
@@ -588,27 +758,66 @@ VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, 
 	return item, nil
 }
 
-func (s *MemoryStore) duplicateSubmission(ctx context.Context, db *sql.DB, item domain.SurveySubmission) (bool, string) {
+func (s *Store) duplicateSubmission(ctx context.Context, db *sql.DB, item domain.SurveySubmission) (bool, string) {
 	phone := ""
 	if item.Answers != nil {
 		phone = strings.TrimSpace(fmt.Sprint(item.Answers["patient_phone"]))
 	}
 	var count int
 	if item.PatientID != "" {
-		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM survey_submissions WHERE share_id = NULLIF(?, '') AND patient_id = NULLIF(?, '')`, item.ShareID, item.PatientID).Scan(&count)
+		query := `SELECT COUNT(*) FROM survey_submissions WHERE patient_id = NULLIF(?, '')`
+		args := []interface{}{item.PatientID}
+		if item.ID != "" {
+			query += ` AND id <> ?`
+			args = append(args, item.ID)
+		}
+		if item.ProjectID != "" {
+			query += ` AND project_id = NULLIF(?, '')`
+			args = append(args, item.ProjectID)
+		} else {
+			query += ` AND share_id = NULLIF(?, '')`
+			args = append(args, item.ShareID)
+		}
+		_ = db.QueryRowContext(ctx, query, args...).Scan(&count)
 		if count > 0 {
 			return true, "同一患者重复提交"
 		}
 	}
 	if item.VisitID != "" {
-		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM survey_submissions WHERE share_id = NULLIF(?, '') AND visit_id = NULLIF(?, '')`, item.ShareID, item.VisitID).Scan(&count)
+		query := `SELECT COUNT(*) FROM survey_submissions WHERE visit_id = NULLIF(?, '')`
+		args := []interface{}{item.VisitID}
+		if item.ID != "" {
+			query += ` AND id <> ?`
+			args = append(args, item.ID)
+		}
+		if item.ProjectID != "" {
+			query += ` AND project_id = NULLIF(?, '')`
+			args = append(args, item.ProjectID)
+		} else {
+			query += ` AND share_id = NULLIF(?, '')`
+			args = append(args, item.ShareID)
+		}
+		_ = db.QueryRowContext(ctx, query, args...).Scan(&count)
 		if count > 0 {
 			return true, "同一就诊重复提交"
 		}
 	}
 	if phone != "" {
 		like := `%\"patient_phone\":\"` + phone + `\"%`
-		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM survey_submissions WHERE share_id = NULLIF(?, '') AND CAST(answers_json AS CHAR) LIKE ?`, item.ShareID, like).Scan(&count)
+		query := `SELECT COUNT(*) FROM survey_submissions WHERE CAST(answers_json AS CHAR) LIKE ?`
+		args := []interface{}{like}
+		if item.ID != "" {
+			query += ` AND id <> ?`
+			args = append(args, item.ID)
+		}
+		if item.ProjectID != "" {
+			query += ` AND project_id = NULLIF(?, '')`
+			args = append(args, item.ProjectID)
+		} else {
+			query += ` AND share_id = NULLIF(?, '')`
+			args = append(args, item.ShareID)
+		}
+		_ = db.QueryRowContext(ctx, query, args...).Scan(&count)
 		if count > 0 {
 			return true, "同一手机号重复提交"
 		}
@@ -616,7 +825,7 @@ func (s *MemoryStore) duplicateSubmission(ctx context.Context, db *sql.DB, item 
 	return false, ""
 }
 
-func (s *MemoryStore) SurveySubmissions(ctx context.Context, projectID string) ([]domain.SurveySubmission, error) {
+func (s *Store) SurveySubmissions(ctx context.Context, projectID string) ([]domain.SurveySubmission, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -650,7 +859,7 @@ func (s *MemoryStore) SurveySubmissions(ctx context.Context, projectID string) (
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) SatisfactionIndicators(ctx context.Context, projectID string) ([]domain.SatisfactionIndicator, error) {
+func (s *Store) SatisfactionIndicators(ctx context.Context, projectID string) ([]domain.SatisfactionIndicator, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -691,7 +900,7 @@ func (s *MemoryStore) SatisfactionIndicators(ctx context.Context, projectID stri
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertSatisfactionIndicator(ctx context.Context, item domain.SatisfactionIndicator) (domain.SatisfactionIndicator, error) {
+func (s *Store) UpsertSatisfactionIndicator(ctx context.Context, item domain.SatisfactionIndicator) (domain.SatisfactionIndicator, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SatisfactionIndicator{}, err
@@ -716,14 +925,34 @@ ON DUPLICATE KEY UPDATE project_id=VALUES(project_id), target_type=VALUES(target
 }
 
 func defaultSatisfactionIndicators(projectID string) []domain.SatisfactionIndicator {
+	outpatientRoot := uuid.NewString()
+	emergencyRoot := uuid.NewString()
+	inpatientRoot := uuid.NewString()
+	dischargeRoot := uuid.NewString()
+	physicalRoot := uuid.NewString()
 	return []domain.SatisfactionIndicator{
-		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 1, Name: "综合体验", ServiceStage: "全流程", ServiceNode: "总体评价", QuestionID: "overall_satisfaction", Weight: 1, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
-		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 2, Name: "推荐意愿", ServiceStage: "全流程", ServiceNode: "推荐", QuestionID: "recommend_score", Weight: 1, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
-		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 2, Name: "候诊体验", ServiceStage: "候诊", ServiceNode: "候诊时间", QuestionID: "service_matrix", Weight: 1, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: outpatientRoot, ProjectID: projectID, TargetType: "outpatient", Level: 1, Name: "门诊综合体验", ServiceStage: "全流程", ServiceNode: "总体评价", QuestionID: "overall_satisfaction", Weight: 1.2, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 2, ParentID: outpatientRoot, Name: "预约挂号体验", ServiceStage: "预约挂号", ServiceNode: "挂号缴费", QuestionID: "service_matrix", Weight: 0.8, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 2, ParentID: outpatientRoot, Name: "候诊体验", ServiceStage: "候诊就医", ServiceNode: "候诊时间", QuestionID: "service_matrix", Weight: 1, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 2, ParentID: outpatientRoot, Name: "医生沟通", ServiceStage: "候诊就医", ServiceNode: "医生沟通", QuestionID: "service_matrix", Weight: 1.2, IncludeTotalScore: true, NationalDimension: "医生服务", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "outpatient", Level: 2, ParentID: outpatientRoot, Name: "推荐意愿", ServiceStage: "全流程", ServiceNode: "推荐", QuestionID: "recommend_score", Weight: 1, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
+		{ID: emergencyRoot, ProjectID: projectID, TargetType: "emergency", Level: 1, Name: "急诊综合体验", ServiceStage: "全流程", ServiceNode: "总体评价", QuestionID: "overall_satisfaction", Weight: 1, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "emergency", Level: 2, ParentID: emergencyRoot, Name: "预检分诊", ServiceStage: "预检分诊", ServiceNode: "分诊效率", QuestionID: "service_matrix", Weight: 1, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "emergency", Level: 2, ParentID: emergencyRoot, Name: "急诊等待", ServiceStage: "急诊处置", ServiceNode: "等待时间", QuestionID: "service_matrix", Weight: 1.1, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: inpatientRoot, ProjectID: projectID, TargetType: "inpatient", Level: 1, Name: "住院综合体验", ServiceStage: "全流程", ServiceNode: "总体评价", QuestionID: "overall_satisfaction", Weight: 1.2, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "inpatient", Level: 2, ParentID: inpatientRoot, Name: "医生查房沟通", ServiceStage: "住院治疗", ServiceNode: "医生查房", QuestionID: "service_matrix", Weight: 1.2, IncludeTotalScore: true, NationalDimension: "医生服务", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "inpatient", Level: 2, ParentID: inpatientRoot, Name: "护理服务", ServiceStage: "住院治疗", ServiceNode: "护理服务", QuestionID: "service_matrix", Weight: 1.1, IncludeTotalScore: true, NationalDimension: "护理服务", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "inpatient", Level: 2, ParentID: inpatientRoot, Name: "出院准备", ServiceStage: "出院准备", ServiceNode: "出院宣教", QuestionID: "service_matrix", Weight: 0.9, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: dischargeRoot, ProjectID: projectID, TargetType: "discharge", Level: 1, Name: "出院随访体验", ServiceStage: "全流程", ServiceNode: "总体评价", QuestionID: "overall_satisfaction", Weight: 1, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "discharge", Level: 2, ParentID: dischargeRoot, Name: "康复指导", ServiceStage: "康复随访", ServiceNode: "康复指导", QuestionID: "service_matrix", Weight: 1, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "discharge", Level: 2, ParentID: dischargeRoot, Name: "复诊预约", ServiceStage: "康复随访", ServiceNode: "复诊预约", QuestionID: "service_matrix", Weight: 0.8, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: false, Enabled: true},
+		{ID: physicalRoot, ProjectID: projectID, TargetType: "physical", Level: 1, Name: "体检综合体验", ServiceStage: "全流程", ServiceNode: "总体评价", QuestionID: "overall_satisfaction", Weight: 1, IncludeTotalScore: true, NationalDimension: "综合体验", IncludeNational: true, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "physical", Level: 2, ParentID: physicalRoot, Name: "体检等候", ServiceStage: "体检过程", ServiceNode: "排队等候", QuestionID: "service_matrix", Weight: 1, IncludeTotalScore: true, NationalDimension: "诊疗流程", IncludeNational: false, Enabled: true},
+		{ID: uuid.NewString(), ProjectID: projectID, TargetType: "physical", Level: 2, ParentID: physicalRoot, Name: "报告解读", ServiceStage: "报告解读", ServiceNode: "报告及时", QuestionID: "service_matrix", Weight: 1.1, IncludeTotalScore: true, NationalDimension: "医生服务", IncludeNational: false, Enabled: true},
 	}
 }
 
-func (s *MemoryStore) SatisfactionIndicatorQuestions(ctx context.Context, projectID string) ([]domain.SatisfactionIndicatorQuestion, error) {
+func (s *Store) SatisfactionIndicatorQuestions(ctx context.Context, projectID string) ([]domain.SatisfactionIndicatorQuestion, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -752,7 +981,7 @@ func (s *MemoryStore) SatisfactionIndicatorQuestions(ctx context.Context, projec
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertSatisfactionIndicatorQuestion(ctx context.Context, item domain.SatisfactionIndicatorQuestion) (domain.SatisfactionIndicatorQuestion, error) {
+func (s *Store) UpsertSatisfactionIndicatorQuestion(ctx context.Context, item domain.SatisfactionIndicatorQuestion) (domain.SatisfactionIndicatorQuestion, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SatisfactionIndicatorQuestion{}, err
@@ -773,7 +1002,7 @@ ON DUPLICATE KEY UPDATE indicator_id=VALUES(indicator_id), question_label=VALUES
 	return item, err
 }
 
-func (s *MemoryStore) SatisfactionCleaningRules(ctx context.Context, projectID string) ([]domain.SatisfactionCleaningRule, error) {
+func (s *Store) SatisfactionCleaningRules(ctx context.Context, projectID string) ([]domain.SatisfactionCleaningRule, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -813,7 +1042,7 @@ func (s *MemoryStore) SatisfactionCleaningRules(ctx context.Context, projectID s
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertSatisfactionCleaningRule(ctx context.Context, item domain.SatisfactionCleaningRule) (domain.SatisfactionCleaningRule, error) {
+func (s *Store) UpsertSatisfactionCleaningRule(ctx context.Context, item domain.SatisfactionCleaningRule) (domain.SatisfactionCleaningRule, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SatisfactionCleaningRule{}, err
@@ -842,10 +1071,15 @@ func defaultCleaningRules(projectID string) []domain.SatisfactionCleaningRule {
 		{ID: uuid.NewString(), ProjectID: projectID, Name: "同项目重复提交", RuleType: "duplicate_project", Enabled: true, Config: map[string]interface{}{"windowHours": 24, "strategy": "keep_latest"}, Action: "mark_suspicious"},
 		{ID: uuid.NewString(), ProjectID: projectID, Name: "全同选项", RuleType: "same_option", Enabled: true, Config: map[string]interface{}{"minQuestionCount": 5}, Action: "mark_suspicious"},
 		{ID: uuid.NewString(), ProjectID: projectID, Name: "同 IP/设备高频提交", RuleType: "same_device", Enabled: false, Config: map[string]interface{}{"maxCount": 5, "windowHours": 1}, Action: "mark_suspicious"},
+		{ID: uuid.NewString(), ProjectID: projectID, Name: "实名调查缺少患者身份", RuleType: "identity_required", Enabled: true, Config: map[string]interface{}{"allowPhoneFallback": true}, Action: "mark_suspicious"},
+		{ID: uuid.NewString(), ProjectID: projectID, Name: "有效答题数不足", RuleType: "answer_completion", Enabled: false, Config: map[string]interface{}{"minAnswered": 3, "requiredFields": []string{}}, Action: "manual_review"},
+		{ID: uuid.NewString(), ProjectID: projectID, Name: "调查员或点位留痕缺失", RuleType: "investigator_required", Enabled: false, Config: map[string]interface{}{"requireInvestigatorId": true, "fallbackChannel": "tablet,qr"}, Action: "manual_review"},
+		{ID: uuid.NewString(), ProjectID: projectID, Name: "样本真实性校验", RuleType: "sample_authenticity", Enabled: true, Config: map[string]interface{}{"requireVisitOrPatient": false, "blockAnonymousDuplicate": true}, Action: "mark_suspicious"},
+		{ID: uuid.NewString(), ProjectID: projectID, Name: "样本配额控制", RuleType: "quota_control", Enabled: false, Config: map[string]interface{}{"maxOverQuotaPercent": 10}, Action: "manual_review"},
 	}
 }
 
-func (s *MemoryStore) SatisfactionIssues(ctx context.Context, projectID string) ([]domain.SatisfactionIssue, error) {
+func (s *Store) SatisfactionIssues(ctx context.Context, projectID string) ([]domain.SatisfactionIssue, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -876,7 +1110,7 @@ func (s *MemoryStore) SatisfactionIssues(ctx context.Context, projectID string) 
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertSatisfactionIssue(ctx context.Context, item domain.SatisfactionIssue) (domain.SatisfactionIssue, error) {
+func (s *Store) UpsertSatisfactionIssue(ctx context.Context, item domain.SatisfactionIssue) (domain.SatisfactionIssue, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SatisfactionIssue{}, err
@@ -905,7 +1139,7 @@ ON DUPLICATE KEY UPDATE title=VALUES(title), responsible_department=VALUES(respo
 	return item, err
 }
 
-func (s *MemoryStore) SatisfactionIssueEvents(ctx context.Context, issueID string) ([]domain.SatisfactionIssueEvent, error) {
+func (s *Store) SatisfactionIssueEvents(ctx context.Context, issueID string) ([]domain.SatisfactionIssueEvent, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -929,7 +1163,7 @@ func (s *MemoryStore) SatisfactionIssueEvents(ctx context.Context, issueID strin
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) AddSatisfactionIssueEvent(ctx context.Context, item domain.SatisfactionIssueEvent) (domain.SatisfactionIssueEvent, error) {
+func (s *Store) AddSatisfactionIssueEvent(ctx context.Context, item domain.SatisfactionIssueEvent) (domain.SatisfactionIssueEvent, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SatisfactionIssueEvent{}, err
@@ -956,7 +1190,7 @@ func (s *MemoryStore) AddSatisfactionIssueEvent(ctx context.Context, item domain
 	return item, err
 }
 
-func (s *MemoryStore) SurveySubmissionAuditLogs(ctx context.Context, submissionID string) ([]domain.SurveySubmissionAuditLog, error) {
+func (s *Store) SurveySubmissionAuditLogs(ctx context.Context, submissionID string) ([]domain.SurveySubmissionAuditLog, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -978,7 +1212,7 @@ func (s *MemoryStore) SurveySubmissionAuditLogs(ctx context.Context, submissionI
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) AddSurveySubmissionAuditLog(ctx context.Context, item domain.SurveySubmissionAuditLog) (domain.SurveySubmissionAuditLog, error) {
+func (s *Store) AddSurveySubmissionAuditLog(ctx context.Context, item domain.SurveySubmissionAuditLog) (domain.SurveySubmissionAuditLog, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SurveySubmissionAuditLog{}, err
@@ -994,7 +1228,7 @@ func (s *MemoryStore) AddSurveySubmissionAuditLog(ctx context.Context, item doma
 	return item, err
 }
 
-func (s *MemoryStore) SurveySubmission(ctx context.Context, id string) (domain.SurveySubmission, error) {
+func (s *Store) SurveySubmission(ctx context.Context, id string) (domain.SurveySubmission, error) {
 	items, err := s.SurveySubmissions(ctx, "")
 	if err != nil {
 		return domain.SurveySubmission{}, err
@@ -1012,7 +1246,7 @@ func (s *MemoryStore) SurveySubmission(ctx context.Context, id string) (domain.S
 	return domain.SurveySubmission{}, ErrNotFound
 }
 
-func (s *MemoryStore) surveySubmissionAnswers(ctx context.Context, id string) ([]domain.SurveySubmissionAnswer, error) {
+func (s *Store) surveySubmissionAnswers(ctx context.Context, id string) ([]domain.SurveySubmissionAnswer, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return nil, err
@@ -1040,7 +1274,7 @@ func (s *MemoryStore) surveySubmissionAnswers(ctx context.Context, id string) ([
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpdateSurveySubmissionQuality(ctx context.Context, id, status, reason string) (domain.SurveySubmission, error) {
+func (s *Store) UpdateSurveySubmissionQuality(ctx context.Context, id, status, reason string) (domain.SurveySubmission, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return domain.SurveySubmission{}, err
@@ -1057,32 +1291,281 @@ func (s *MemoryStore) UpdateSurveySubmissionQuality(ctx context.Context, id, sta
 	return s.SurveySubmission(ctx, id)
 }
 
-func qualityStatus(item domain.SurveySubmission) string {
-	reasons := cleaningReasons(item)
-	if len(reasons) > 0 {
-		item.QualityReason = strings.Join(reasons, "；")
-		return "suspicious"
+func (s *Store) ReevaluateSurveySubmissionQuality(ctx context.Context, projectID string) ([]domain.SurveySubmission, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return "pending"
+	defer db.Close()
+	items, err := s.SurveySubmissions(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	updated := []domain.SurveySubmission{}
+	for _, item := range items {
+		fromStatus := item.QualityStatus
+		fromReason := item.QualityReason
+		nextStatus, nextReason := s.evaluateSurveySubmissionQuality(ctx, db, item)
+		if nextStatus == fromStatus && nextReason == fromReason {
+			updated = append(updated, item)
+			continue
+		}
+		_, err := db.ExecContext(ctx, `UPDATE survey_submissions SET quality_status = ?, quality_reason = NULLIF(?, '') WHERE id = ?`, nextStatus, nextReason, item.ID)
+		if err != nil {
+			return nil, err
+		}
+		_, _ = s.AddSurveySubmissionAuditLog(ctx, domain.SurveySubmissionAuditLog{SubmissionID: item.ID, ProjectID: item.ProjectID, Action: "quality_reapply", FromStatus: fromStatus, ToStatus: nextStatus, Reason: nextReason})
+		item.QualityStatus = nextStatus
+		item.QualityReason = nextReason
+		updated = append(updated, item)
+	}
+	return updated, nil
 }
 
-func cleaningReasons(item domain.SurveySubmission) []string {
+func (s *Store) evaluateSurveySubmissionQuality(ctx context.Context, db *sql.DB, item domain.SurveySubmission) (string, string) {
+	status := "pending"
 	reasons := []string{}
-	if item.DurationSeconds > 0 && item.DurationSeconds < 10 {
-		reasons = append(reasons, "答题时长过短")
+	rules, err := s.SatisfactionCleaningRules(ctx, item.ProjectID)
+	if err != nil {
+		rules = defaultCleaningRules(item.ProjectID)
 	}
-	if item.Answers != nil {
-		if sameChoiceAnswers(item.Answers) {
-			reasons = append(reasons, "疑似全同选项")
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
 		}
-		if strings.TrimSpace(fmt.Sprint(item.Answers["patient_phone"])) == "" && strings.TrimSpace(item.PatientID) == "" && !item.Anonymous {
-			reasons = append(reasons, "实名调查缺少患者身份")
+		triggered, reason := s.cleaningRuleTriggered(ctx, db, item, rule)
+		if !triggered {
+			continue
+		}
+		reasons = append(reasons, firstNonEmptyStore(reason, rule.Name))
+		switch rule.Action {
+		case "mark_invalid":
+			status = "invalid"
+		case "manual_review":
+			if status != "invalid" {
+				status = "pending"
+			}
+		default:
+			if status != "invalid" {
+				status = "suspicious"
+			}
 		}
 	}
-	return reasons
+	return status, strings.Join(uniqueStrings(reasons), "；")
+}
+
+func (s *Store) cleaningRuleTriggered(ctx context.Context, db *sql.DB, item domain.SurveySubmission, rule domain.SatisfactionCleaningRule) (bool, string) {
+	switch rule.RuleType {
+	case "duration":
+		minSeconds := int(configFloat(rule.Config, "minSeconds", 10))
+		return item.DurationSeconds > 0 && item.DurationSeconds < minSeconds, fmt.Sprintf("%s：%ds < %ds", rule.Name, item.DurationSeconds, minSeconds)
+	case "duplicate_project":
+		duplicate, reason := s.duplicateSubmission(ctx, db, item)
+		return duplicate, firstNonEmptyStore(reason, rule.Name)
+	case "same_option":
+		minCount := int(configFloat(rule.Config, "minQuestionCount", 4))
+		return sameChoiceAnswersWithMin(item.Answers, minCount), rule.Name
+	case "same_device":
+		if strings.TrimSpace(item.IPAddress) == "" && strings.TrimSpace(item.UserAgent) == "" {
+			return false, ""
+		}
+		windowHours := int(configFloat(rule.Config, "windowHours", 1))
+		maxCount := int(configFloat(rule.Config, "maxCount", 5))
+		var count int
+		query := `SELECT COUNT(*) FROM survey_submissions WHERE submitted_at >= DATE_SUB(NOW(), INTERVAL ? HOUR) AND COALESCE(ip_address, '') = ? AND COALESCE(user_agent, '') = ?`
+		args := []interface{}{windowHours, item.IPAddress, item.UserAgent}
+		if strings.TrimSpace(item.ProjectID) != "" {
+			query += ` AND project_id = ?`
+			args = append(args, item.ProjectID)
+		}
+		_ = db.QueryRowContext(ctx, query, args...).Scan(&count)
+		return count+1 > maxCount, fmt.Sprintf("%s：%d 次/%d 小时", rule.Name, count+1, windowHours)
+	case "identity_required":
+		if item.Anonymous || strings.TrimSpace(item.PatientID) != "" {
+			return false, ""
+		}
+		allowPhone := configBoolStore(rule.Config, "allowPhoneFallback", true)
+		if allowPhone && item.Answers != nil && strings.TrimSpace(fmt.Sprint(item.Answers["patient_phone"])) != "" {
+			return false, ""
+		}
+		return true, rule.Name
+	case "answer_completion":
+		minAnswered := int(configFloat(rule.Config, "minAnswered", 1))
+		requiredFields := configStringSlice(rule.Config, "requiredFields")
+		missing := []string{}
+		for _, field := range requiredFields {
+			if isEmptyAnswer(item.Answers[field]) {
+				missing = append(missing, field)
+			}
+		}
+		answered := answeredCount(item.Answers)
+		if len(missing) > 0 {
+			return true, fmt.Sprintf("%s：缺少 %s", rule.Name, strings.Join(missing, "、"))
+		}
+		if minAnswered > 0 && answered < minAnswered {
+			return true, fmt.Sprintf("%s：有效答题 %d < %d", rule.Name, answered, minAnswered)
+		}
+		return false, ""
+	case "investigator_required":
+		channels := configStringSlice(rule.Config, "fallbackChannel")
+		if len(channels) > 0 && !containsString(channels, item.Channel) {
+			return false, ""
+		}
+		if item.Answers != nil {
+			for _, key := range []string{"investigator_id", "investigator_name", "operator_name", "collector_id"} {
+				if strings.TrimSpace(fmt.Sprint(item.Answers[key])) != "" {
+					return false, ""
+				}
+			}
+		}
+		return configBoolStore(rule.Config, "requireInvestigatorId", true), rule.Name
+	case "sample_authenticity":
+		requireIdentity := configBoolStore(rule.Config, "requireVisitOrPatient", false)
+		if requireIdentity && strings.TrimSpace(item.PatientID) == "" && strings.TrimSpace(item.VisitID) == "" {
+			return true, rule.Name + "：缺少患者或就诊身份"
+		}
+		if configBoolStore(rule.Config, "blockAnonymousDuplicate", true) && item.Anonymous {
+			duplicate, reason := s.duplicateSubmission(ctx, db, item)
+			if duplicate {
+				return true, firstNonEmptyStore(reason, rule.Name)
+			}
+		}
+		return false, ""
+	case "quota_control":
+		if strings.TrimSpace(item.ProjectID) == "" {
+			return false, ""
+		}
+		maxOver := configFloat(rule.Config, "maxOverQuotaPercent", 10)
+		var target, actual int
+		_ = db.QueryRowContext(ctx, `SELECT target_sample_size, (SELECT COUNT(*) FROM survey_submissions WHERE project_id = ?) FROM satisfaction_projects WHERE id = ?`, item.ProjectID, item.ProjectID).Scan(&target, &actual)
+		if target <= 0 {
+			return false, ""
+		}
+		limit := float64(target) * (1 + maxOver/100)
+		return float64(actual) > limit, fmt.Sprintf("%s：%d/%d", rule.Name, actual, target)
+	default:
+		return false, ""
+	}
+}
+
+func containsString(items []string, value string) bool {
+	value = strings.TrimSpace(value)
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), value) {
+			return true
+		}
+	}
+	return false
+}
+
+func configBoolStore(config map[string]interface{}, key string, fallback bool) bool {
+	if config == nil {
+		return fallback
+	}
+	switch value := config[key].(type) {
+	case bool:
+		return value
+	case string:
+		return strings.EqualFold(value, "true") || value == "1"
+	}
+	return fallback
+}
+
+func configFloat(config map[string]interface{}, key string, fallback float64) float64 {
+	if config == nil {
+		return fallback
+	}
+	switch value := config[key].(type) {
+	case float64:
+		return value
+	case int:
+		return float64(value)
+	case string:
+		var parsed float64
+		if _, err := fmt.Sscanf(value, "%f", &parsed); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func configStringSlice(config map[string]interface{}, key string) []string {
+	if config == nil {
+		return nil
+	}
+	switch value := config[key].(type) {
+	case []string:
+		return value
+	case []interface{}:
+		result := []string{}
+		for _, item := range value {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	case string:
+		result := []string{}
+		for _, item := range strings.Split(value, ",") {
+			text := strings.TrimSpace(item)
+			if text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func answeredCount(answers map[string]interface{}) int {
+	count := 0
+	for key, value := range answers {
+		if key == "patient_phone" || key == "patient_name" || key == "department" || key == "diagnosis" {
+			continue
+		}
+		if !isEmptyAnswer(value) {
+			count++
+		}
+	}
+	return count
+}
+
+func isEmptyAnswer(value interface{}) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []interface{}:
+		return len(typed) == 0
+	case []string:
+		return len(typed) == 0
+	default:
+		return false
+	}
+}
+
+func uniqueStrings(items []string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		result = append(result, item)
+	}
+	return result
 }
 
 func sameChoiceAnswers(answers map[string]interface{}) bool {
+	return sameChoiceAnswersWithMin(answers, 4)
+}
+
+func sameChoiceAnswersWithMin(answers map[string]interface{}, minCount int) bool {
 	count := 0
 	first := ""
 	for key, value := range answers {
@@ -1100,7 +1583,7 @@ func sameChoiceAnswers(answers map[string]interface{}) bool {
 		}
 		count++
 	}
-	return count >= 4
+	return count >= minCount
 }
 
 func scoreAnswer(answer interface{}) *float64 {

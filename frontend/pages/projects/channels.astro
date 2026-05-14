@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { SurveyShareManager } from "../../islands/SurveyShareManager"
+---
+
+<AppLayout>
+  <PageHeader title="项目 / 渠道发布" description="生成 Web、二维码、短信、微信、电话和平板采集渠道，并触达项目收件人" />
+  <SurveyShareManager client:load initialTab="channels" />
+</AppLayout>

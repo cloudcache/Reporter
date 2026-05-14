@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"reporter/internal/config"
 	"reporter/internal/domain"
@@ -33,7 +34,7 @@ func (g *fakeSIPGateway) Hangup(_ context.Context, _ string) error {
 }
 
 func TestLogin(t *testing.T) {
-	router := NewRouter(Dependencies{Config: config.Load(), Log: logger.New("test"), Store: store.NewMemoryStore()})
+	router := NewRouter(Dependencies{Config: config.Load(), Log: logger.New("test"), Store: store.NewTestStore()})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"admin123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
@@ -50,7 +51,7 @@ func TestLogin(t *testing.T) {
 
 func TestCreateAndEndCallUsesSIPGateway(t *testing.T) {
 	gateway := &fakeSIPGateway{}
-	router := NewRouter(Dependencies{Config: config.Load(), Log: logger.New("test"), Store: store.NewMemoryStore(), SIP: gateway})
+	router := NewRouter(Dependencies{Config: config.Load(), Log: logger.New("test"), Store: store.NewTestStore(), SIP: gateway})
 	cookie := loginCookie(t, router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/call-center/calls", strings.NewReader(`{"seatId":"SEAT001","patientId":"P001","direction":"outbound","phoneNumber":"13800010001"}`))
@@ -85,7 +86,7 @@ func TestCreateAndEndCallUsesSIPGateway(t *testing.T) {
 }
 
 func TestUploadRecordingUsesConfiguredStorage(t *testing.T) {
-	appStore := store.NewMemoryStore()
+	appStore := store.NewTestStore()
 	if _, err := appStore.UpdateStorageConfig("STOR001", domain.StorageConfig{Name: "测试本地存储", Kind: "local", BasePath: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestUploadRecordingUsesConfiguredStorage(t *testing.T) {
 }
 
 func TestDataSourcePreviewAndSyncMapsPatientVisitAndRecord(t *testing.T) {
-	appStore := store.NewMemoryStore()
+	appStore := store.NewTestStore()
 	source := appStore.CreateDataSource(domain.DataSource{
 		Name:     "同步测试 API",
 		Protocol: "http",
@@ -173,9 +174,86 @@ func TestDataSourcePreviewAndSyncMapsPatientVisitAndRecord(t *testing.T) {
 	}
 }
 
+func TestDataSourceSyncMapsClinicalFacts(t *testing.T) {
+	cfg, err := config.LoadFile("../../config.yaml")
+	if err != nil {
+		t.Fatalf("load root config: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	appStore, err := store.Open(ctx, cfg.Database.Driver, cfg.Database.DSN)
+	if err != nil {
+		t.Fatalf("open configured database store: %v", err)
+	}
+	source := appStore.CreateDataSource(domain.DataSource{
+		Name:     "临床事实同步",
+		Protocol: "http",
+		Endpoint: "https://his.local/clinical-facts",
+		FieldMapping: []domain.FieldMapping{
+			{Source: "$.patientNo", Target: "patient.patientNo", Required: true},
+			{Source: "$.name", Target: "patient.name", Required: true},
+			{Source: "$.visitNo", Target: "visit.visitNo"},
+			{Source: "$.diagnosis", Target: "diagnosis.diagnosisName"},
+			{Source: "$.history", Target: "history.content"},
+			{Source: "$.drug", Target: "medication.drugName"},
+			{Source: "$.labNo", Target: "lab.reportNo"},
+			{Source: "$.labName", Target: "lab.reportName"},
+			{Source: "$.itemName", Target: "labResult.itemName"},
+			{Source: "$.itemValue", Target: "labResult.resultValue"},
+			{Source: "$.examNo", Target: "exam.examNo"},
+			{Source: "$.examName", Target: "exam.examName"},
+			{Source: "$.followupSummary", Target: "followup.summary"},
+			{Source: "$.factType", Target: "fact.factType"},
+			{Source: "$.factKey", Target: "fact.factKey"},
+			{Source: "$.factLabel", Target: "fact.factLabel"},
+			{Source: "$.factValue", Target: "fact.factValue"},
+		},
+	})
+	router := NewRouter(Dependencies{Config: cfg, Log: logger.New("test"), Store: appStore})
+	cookie := loginCookieWithPassword(t, router, "admin", "2.3245678")
+	body := `{"payload":{"patientNo":"P778","name":"事实患者","visitNo":"V778","diagnosis":"糖尿病","history":"高血压病史","drug":"二甲双胍片","labNo":"L778","labName":"血糖","itemName":"空腹血糖","itemValue":"6.8","examNo":"E778","examName":"眼底检查","followupSummary":"用药依从性好","factType":"experience","factKey":"drug_compliance","factLabel":"用药依从性","factValue":"良好"}}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/data-sources/"+source.ID+"/sync", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected sync 200, got %d: %s", res.Code, res.Body.String())
+	}
+	bodyText := res.Body.String()
+	for _, want := range []string{"糖尿病", "二甲双胍片", "空腹血糖", "眼底检查", "用药依从性"} {
+		if !strings.Contains(bodyText, want) {
+			t.Fatalf("expected clinical fact %q in response, got %s", want, bodyText)
+		}
+	}
+	var patient domain.Patient
+	for _, item := range appStore.Patients("P778") {
+		if item.PatientNo == "P778" {
+			patient = item
+			break
+		}
+	}
+	if patient.ID == "" {
+		t.Fatal("expected patient P778 after real sync")
+	}
+	clinical, err := appStore.Patient360(context.Background(), patient.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clinical.Diagnoses) == 0 || len(clinical.Medications) == 0 || len(clinical.LabReports) == 0 || len(clinical.ExamReports) == 0 || len(clinical.FollowupRecords) == 0 || len(clinical.InterviewFacts) == 0 {
+		t.Fatalf("expected database-backed patient 360 clinical facts, response=%s got %#v", bodyText, clinical)
+	}
+}
+
 func loginCookie(t *testing.T, router http.Handler) *http.Cookie {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"admin123"}`))
+	return loginCookieWithPassword(t, router, "admin", "admin123")
+}
+
+func loginCookieWithPassword(t *testing.T, router http.Handler, username, password string) *http.Cookie {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)

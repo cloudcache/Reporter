@@ -1,0 +1,14 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { SatisfactionIndicatorManager } from "../../islands/SatisfactionIndicatorManager"
+import { ProjectScopeSelector } from "../../islands/ProjectScopeSelector"
+---
+
+<AppLayout>
+  <PageHeader title="数据中心 / 指标体系" description="按项目或全局维护门诊、急诊、住院、出院、体检等分类下的指标树、题目绑定、权重和国考映射" />
+  <div class="mb-4">
+    <ProjectScopeSelector client:load />
+  </div>
+  <SatisfactionIndicatorManager client:load />
+</AppLayout>

@@ -8,47 +8,53 @@ const navGroups = [
     label: "业务工作台",
     items: [
       { href: "/", label: "概览", icon: "G" },
-      { href: "/patients", label: "患者管理", icon: "P" },
-      { href: "/schedule", label: "日历日程", icon: "K" },
-      { href: "/datasets", label: "数据集", icon: "D" },
-      { href: "/design", label: "表单设计", icon: "F" },
-      { href: "/reports", label: "分析报表", icon: "R" },
-      { href: "/complaints", label: "评价投诉", icon: "E" },
+      { href: "/projects", label: "项目", icon: "Q", resource: "/api/v1/forms", action: "read" },
+      { href: "/patients", label: "患者管理", icon: "P", resource: "/api/v1/patients", action: "read" },
+      { href: "/schedule", label: "日历日程", icon: "K", resource: "/api/v1/followup", action: "read" },
+      { href: "/design", label: "表单设计", icon: "F", resource: "/api/v1/forms", action: "update" },
+    ],
+  },
+  {
+    label: "数据中心",
+    items: [
+      { href: "/data-center/datasets", label: "数据集", icon: "D", resource: "/api/v1/datasets", action: "read" },
+      { href: "/data-center/reports", label: "分析报表", icon: "R", resource: "/api/v1/reports", action: "read" },
+      { href: "/data-center/complaints", label: "评价投诉", icon: "E", resource: "/api/v1/complaints", action: "read" },
+      { href: "/data-center/indicators", label: "指标体系", icon: "X", resource: "/api/v1/forms", action: "read" },
     ],
   },
   {
     label: "呼叫中心",
     items: [
-      { href: "/followups/tasks", label: "随访任务", icon: "T" },
-      { href: "/followups/plans", label: "随访方案", icon: "L" },
-      { href: "/call-center", label: "坐席管理", icon: "C" },
+      { href: "/followups/tasks", label: "随访任务", icon: "T", resource: "/api/v1/followup", action: "read" },
+      { href: "/followups/plans", label: "随访方案", icon: "L", resource: "/api/v1/followup", action: "create" },
+      { href: "/call-center", label: "坐席管理", icon: "C", resource: "/api/v1/call-center", action: "read" },
     ],
   },
   {
     label: "表单问卷",
     items: [
-      { href: "/forms/library", label: "组件库", icon: "B" },
-      { href: "/design", label: "表单设计", icon: "F" },
-      { href: "/forms/share", label: "满意度项目", icon: "Q" },
+      { href: "/forms/library", label: "组件库", icon: "B", resource: "/api/v1/forms", action: "update" },
+      { href: "/design", label: "表单设计", icon: "F", resource: "/api/v1/forms", action: "update" },
     ],
   },
   {
     label: "配置中心",
     items: [
-      { href: "/sources", label: "数据源", icon: "S" },
-      { href: "/config/channels", label: "接口配置", icon: "I" },
-      { href: "/config/sip", label: "SIP 网关", icon: "W" },
-      { href: "/config/storage", label: "存储配置", icon: "O" },
-      { href: "/config/recording", label: "录音配置", icon: "V" },
-      { href: "/config/models", label: "大模型配置", icon: "M" },
+      { href: "/sources", label: "数据源", icon: "S", resource: "/api/v1/data-sources", action: "read" },
+      { href: "/config/channels", label: "接口配置", icon: "I", resource: "/api/v1/system", action: "update" },
+      { href: "/config/sip", label: "SIP 网关", icon: "W", resource: "/api/v1/call-center", action: "update" },
+      { href: "/config/storage", label: "存储配置", icon: "O", resource: "/api/v1/call-center", action: "update" },
+      { href: "/config/recording", label: "录音配置", icon: "V", resource: "/api/v1/call-center", action: "update" },
+      { href: "/config/models", label: "大模型配置", icon: "M", resource: "/api/v1/call-center", action: "update" },
     ],
   },
   {
     label: "系统管理",
     items: [
       { href: "/account", label: "个人中心", icon: "A" },
-      { href: "/system", label: "用户管理", icon: "U" },
-      { href: "/system/dictionaries", label: "字典管理", icon: "Y" },
+      { href: "/system", label: "用户管理", icon: "U", resource: "/api/v1/users", action: "read" },
+      { href: "/system/dictionaries", label: "字典管理", icon: "Y", resource: "/api/v1/system", action: "read" },
     ],
   },
 ]
@@ -87,7 +93,7 @@ const currentPath = Astro.url.pathname
       <div class="h-full overflow-y-auto px-3 py-4">
         <nav class="space-y-5">
           {navGroups.map((group) => (
-            <div>
+            <div class="nav-group">
               <p class="nav-group-label mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted">{group.label}</p>
               <div class="space-y-1">
                 {group.items.map((item) => {
@@ -95,6 +101,9 @@ const currentPath = Astro.url.pathname
                   return (
                     <a
                       href={item.href}
+                      data-nav-item
+                      data-resource={item.resource}
+                      data-action={item.action}
                       class:list={[
                         "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                         active ? "bg-blue-50 text-primary" : "text-gray-700 hover:bg-gray-100 hover:text-ink",
@@ -125,11 +134,64 @@ const currentPath = Astro.url.pathname
       <slot />
     </main>
     <script is:inline>
+      const apiBase = "http://127.0.0.1:8080";
+      const accessTokenKey = "reporter.accessToken";
       const collapsedKey = "reporter.sidebar.collapsed";
+      const canAccess = (permissions, roles, resource, action) => {
+        if (roles.includes("admin")) return true;
+        if (!resource || !action) return true;
+        return permissions.some((permission) => {
+          const [allowedResource, allowedAction = "*"] = String(permission).split(":");
+          const resourceAllowed = allowedResource === "*" || allowedResource === resource;
+          const actionAllowed = allowedAction === "*" || allowedAction === action;
+          return resourceAllowed && actionAllowed;
+        });
+      };
+      const routePermission = () => {
+        const path = window.location.pathname;
+        const candidates = Array.from(document.querySelectorAll("[data-nav-item]"))
+          .map((item) => ({
+            href: item.getAttribute("href") || "",
+            resource: item.getAttribute("data-resource") || "",
+            action: item.getAttribute("data-action") || "",
+          }))
+          .filter((item) => item.href && path.startsWith(item.href) && item.href !== "/")
+          .sort((a, b) => b.href.length - a.href.length);
+        return candidates[0] || null;
+      };
+      const applyPermissions = async () => {
+        const token = localStorage.getItem(accessTokenKey);
+        if (!token || window.location.pathname === "/login") return;
+        try {
+          const response = await fetch(`${apiBase}/api/v1/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "include",
+          });
+          if (!response.ok) return;
+          const user = await response.json();
+          const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+          const roles = Array.isArray(user.roles) ? user.roles : [];
+          document.querySelectorAll("[data-nav-item]").forEach((item) => {
+            const allowed = canAccess(permissions, roles, item.getAttribute("data-resource"), item.getAttribute("data-action"));
+            item.classList.toggle("hidden", !allowed);
+          });
+          document.querySelectorAll(".nav-group").forEach((group) => {
+            const hasVisibleItem = Array.from(group.querySelectorAll("[data-nav-item]")).some((item) => !item.classList.contains("hidden"));
+            group.classList.toggle("hidden", !hasVisibleItem);
+          });
+          const required = routePermission();
+          if (required && !canAccess(permissions, roles, required.resource, required.action)) {
+            window.location.replace("/");
+          }
+        } catch {
+          // Keep the static shell available; protected APIs still enforce RBAC.
+        }
+      };
       const applySidebarState = () => {
         const collapsed = localStorage.getItem(collapsedKey) === "true";
         document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
       };
+      applyPermissions();
       applySidebarState();
       document.getElementById("sidebarToggle")?.addEventListener("click", () => {
         if (window.matchMedia("(max-width: 900px)").matches) {

@@ -188,6 +188,145 @@ func ApplyMedicalRecordFields(fields map[string]interface{}, record domain.Medic
 	return record
 }
 
+func ApplyDiagnosisFields(fields map[string]interface{}, item domain.PatientDiagnosis) domain.PatientDiagnosis {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.DiagnosisCode = firstNonEmpty(stringField(fields, "diagnosisCode"), item.DiagnosisCode)
+	item.DiagnosisName = firstNonEmpty(stringField(fields, "diagnosisName"), stringField(fields, "name"), item.DiagnosisName)
+	item.DiagnosisType = firstNonEmpty(stringField(fields, "diagnosisType"), item.DiagnosisType, "primary")
+	item.DiagnosedAt = firstNonEmpty(stringField(fields, "diagnosedAt"), stringField(fields, "diagnosisAt"), item.DiagnosedAt)
+	item.DepartmentName = firstNonEmpty(stringField(fields, "departmentName"), item.DepartmentName)
+	item.DoctorName = firstNonEmpty(stringField(fields, "doctorName"), item.DoctorName)
+	item.SourceSystem = firstNonEmpty(stringField(fields, "sourceSystem"), item.SourceSystem)
+	return item
+}
+
+func ApplyHistoryFields(fields map[string]interface{}, item domain.PatientHistory) domain.PatientHistory {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.HistoryType = firstNonEmpty(stringField(fields, "historyType"), item.HistoryType, "past")
+	item.Title = firstNonEmpty(stringField(fields, "title"), item.Title, "既往史")
+	item.Content = firstNonEmpty(stringField(fields, "content"), item.Content)
+	item.RecordedAt = firstNonEmpty(stringField(fields, "recordedAt"), item.RecordedAt)
+	item.SourceSystem = firstNonEmpty(stringField(fields, "sourceSystem"), item.SourceSystem)
+	return item
+}
+
+func ApplyMedicationFields(fields map[string]interface{}, item domain.MedicationOrder) domain.MedicationOrder {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.OrderNo = firstNonEmpty(stringField(fields, "orderNo"), item.OrderNo)
+	item.PrescriptionNo = firstNonEmpty(stringField(fields, "prescriptionNo"), item.PrescriptionNo)
+	item.DrugCode = firstNonEmpty(stringField(fields, "drugCode"), item.DrugCode)
+	item.DrugName = firstNonEmpty(stringField(fields, "drugName"), stringField(fields, "name"), item.DrugName)
+	item.GenericName = firstNonEmpty(stringField(fields, "genericName"), item.GenericName)
+	item.Specification = firstNonEmpty(stringField(fields, "specification"), item.Specification)
+	item.Dosage = firstNonEmpty(stringField(fields, "dosage"), item.Dosage)
+	item.DosageUnit = firstNonEmpty(stringField(fields, "dosageUnit"), item.DosageUnit)
+	item.Frequency = firstNonEmpty(stringField(fields, "frequency"), item.Frequency)
+	item.Route = firstNonEmpty(stringField(fields, "route"), item.Route)
+	item.StartAt = firstNonEmpty(stringField(fields, "startAt"), item.StartAt)
+	item.EndAt = firstNonEmpty(stringField(fields, "endAt"), item.EndAt)
+	item.Days = firstNonZeroInt(intField(fields, "days"), item.Days)
+	item.Quantity = firstNonZeroFloat(floatField(fields, "quantity"), item.Quantity)
+	item.Manufacturer = firstNonEmpty(stringField(fields, "manufacturer"), item.Manufacturer)
+	item.DoctorName = firstNonEmpty(stringField(fields, "doctorName"), item.DoctorName)
+	item.PharmacistName = firstNonEmpty(stringField(fields, "pharmacistName"), item.PharmacistName)
+	item.Status = firstNonEmpty(stringField(fields, "status"), item.Status, "active")
+	item.AdverseReaction = firstNonEmpty(stringField(fields, "adverseReaction"), item.AdverseReaction)
+	item.Compliance = firstNonEmpty(stringField(fields, "compliance"), item.Compliance)
+	return item
+}
+
+func ApplyLabReportFields(fields map[string]interface{}, item domain.LabReport) domain.LabReport {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.ReportNo = firstNonEmpty(stringField(fields, "reportNo"), item.ReportNo)
+	item.ReportName = firstNonEmpty(stringField(fields, "reportName"), stringField(fields, "name"), item.ReportName)
+	item.Specimen = firstNonEmpty(stringField(fields, "specimen"), item.Specimen)
+	item.OrderedAt = firstNonEmpty(stringField(fields, "orderedAt"), item.OrderedAt)
+	item.ReportedAt = firstNonEmpty(stringField(fields, "reportedAt"), item.ReportedAt)
+	item.DepartmentName = firstNonEmpty(stringField(fields, "departmentName"), item.DepartmentName)
+	item.DoctorName = firstNonEmpty(stringField(fields, "doctorName"), item.DoctorName)
+	item.Status = firstNonEmpty(stringField(fields, "status"), item.Status, "reported")
+	item.SourceSystem = firstNonEmpty(stringField(fields, "sourceSystem"), item.SourceSystem)
+	return item
+}
+
+func ApplyLabResultFields(fields map[string]interface{}, item domain.LabResult) domain.LabResult {
+	item.ReportID = firstNonEmpty(stringField(fields, "reportId"), item.ReportID)
+	item.ItemCode = firstNonEmpty(stringField(fields, "itemCode"), item.ItemCode)
+	item.ItemName = firstNonEmpty(stringField(fields, "itemName"), stringField(fields, "name"), item.ItemName)
+	item.ResultValue = firstNonEmpty(stringField(fields, "resultValue"), stringField(fields, "value"), item.ResultValue)
+	item.Unit = firstNonEmpty(stringField(fields, "unit"), item.Unit)
+	item.ReferenceRange = firstNonEmpty(stringField(fields, "referenceRange"), item.ReferenceRange)
+	item.AbnormalFlag = firstNonEmpty(stringField(fields, "abnormalFlag"), item.AbnormalFlag)
+	item.NumericValue = firstNonZeroFloat(floatField(fields, "numericValue"), item.NumericValue)
+	return item
+}
+
+func ApplyExamReportFields(fields map[string]interface{}, item domain.ExamReport) domain.ExamReport {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.ExamNo = firstNonEmpty(stringField(fields, "examNo"), item.ExamNo)
+	item.ExamType = firstNonEmpty(stringField(fields, "examType"), item.ExamType)
+	item.ExamName = firstNonEmpty(stringField(fields, "examName"), stringField(fields, "name"), item.ExamName)
+	item.BodyPart = firstNonEmpty(stringField(fields, "bodyPart"), item.BodyPart)
+	item.ReportConclusion = firstNonEmpty(stringField(fields, "reportConclusion"), stringField(fields, "conclusion"), item.ReportConclusion)
+	item.ReportFindings = firstNonEmpty(stringField(fields, "reportFindings"), stringField(fields, "findings"), item.ReportFindings)
+	item.OrderedAt = firstNonEmpty(stringField(fields, "orderedAt"), item.OrderedAt)
+	item.ReportedAt = firstNonEmpty(stringField(fields, "reportedAt"), item.ReportedAt)
+	item.DepartmentName = firstNonEmpty(stringField(fields, "departmentName"), item.DepartmentName)
+	item.DoctorName = firstNonEmpty(stringField(fields, "doctorName"), item.DoctorName)
+	item.SourceSystem = firstNonEmpty(stringField(fields, "sourceSystem"), item.SourceSystem)
+	return item
+}
+
+func ApplySurgeryFields(fields map[string]interface{}, item domain.SurgeryRecord) domain.SurgeryRecord {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.OperationCode = firstNonEmpty(stringField(fields, "operationCode"), item.OperationCode)
+	item.OperationName = firstNonEmpty(stringField(fields, "operationName"), stringField(fields, "name"), item.OperationName)
+	item.OperationDate = firstNonEmpty(stringField(fields, "operationDate"), item.OperationDate)
+	item.SurgeonName = firstNonEmpty(stringField(fields, "surgeonName"), item.SurgeonName)
+	item.AnesthesiaType = firstNonEmpty(stringField(fields, "anesthesiaType"), item.AnesthesiaType)
+	item.OperationLevel = firstNonEmpty(stringField(fields, "operationLevel"), item.OperationLevel)
+	item.WoundGrade = firstNonEmpty(stringField(fields, "woundGrade"), item.WoundGrade)
+	item.Outcome = firstNonEmpty(stringField(fields, "outcome"), item.Outcome)
+	item.SourceSystem = firstNonEmpty(stringField(fields, "sourceSystem"), item.SourceSystem)
+	return item
+}
+
+func ApplyFollowupRecordFields(fields map[string]interface{}, item domain.FollowupRecord) domain.FollowupRecord {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.TaskID = firstNonEmpty(stringField(fields, "taskId"), item.TaskID)
+	item.ProjectID = firstNonEmpty(stringField(fields, "projectId"), item.ProjectID)
+	item.FollowupType = firstNonEmpty(stringField(fields, "followupType"), item.FollowupType)
+	item.Channel = firstNonEmpty(stringField(fields, "channel"), item.Channel)
+	item.Status = firstNonEmpty(stringField(fields, "status"), item.Status, "completed")
+	item.Summary = firstNonEmpty(stringField(fields, "summary"), item.Summary)
+	item.SatisfactionScore = firstNonZeroFloat(floatField(fields, "satisfactionScore"), item.SatisfactionScore)
+	item.RiskLevel = firstNonEmpty(stringField(fields, "riskLevel"), item.RiskLevel)
+	item.FollowedAt = firstNonEmpty(stringField(fields, "followedAt"), item.FollowedAt)
+	item.OperatorName = firstNonEmpty(stringField(fields, "operatorName"), item.OperatorName)
+	item.SourceSystem = firstNonEmpty(stringField(fields, "sourceSystem"), item.SourceSystem)
+	return item
+}
+
+func ApplyInterviewFactFields(fields map[string]interface{}, item domain.InterviewExtractedFact) domain.InterviewExtractedFact {
+	item.PatientID = firstNonEmpty(stringField(fields, "patientId"), item.PatientID)
+	item.VisitID = firstNonEmpty(stringField(fields, "visitId"), item.VisitID)
+	item.InterviewID = firstNonEmpty(stringField(fields, "interviewId"), item.InterviewID)
+	item.FactType = firstNonEmpty(stringField(fields, "factType"), item.FactType)
+	item.FactKey = firstNonEmpty(stringField(fields, "factKey"), item.FactKey)
+	item.FactLabel = firstNonEmpty(stringField(fields, "factLabel"), item.FactLabel)
+	item.FactValue = firstNonEmpty(stringField(fields, "factValue"), item.FactValue)
+	item.Confidence = firstNonZeroFloat(floatField(fields, "confidence"), item.Confidence)
+	item.ExtractedAt = firstNonEmpty(stringField(fields, "extractedAt"), item.ExtractedAt)
+	item.SourceText = firstNonEmpty(stringField(fields, "sourceText"), item.SourceText)
+	return item
+}
+
 func normalizePayload(source domain.DataSource, payload interface{}) ([]map[string]interface{}, error) {
 	if payload == nil {
 		payload = samplePayload(source)
@@ -519,6 +658,29 @@ func intField(fields map[string]interface{}, key string) int {
 	}
 }
 
+func floatField(fields map[string]interface{}, key string) float64 {
+	value, ok := fields[key]
+	if !ok || value == nil {
+		return 0
+	}
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case string:
+		parsed, _ := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		return parsed
+	default:
+		parsed, _ := strconv.ParseFloat(fmt.Sprint(typed), 64)
+		return parsed
+	}
+}
+
 func stringSliceField(fields map[string]interface{}, key string) []string {
 	value, ok := fields[key]
 	if !ok || value == nil {
@@ -609,4 +771,22 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstNonZeroInt(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonZeroFloat(values ...float64) float64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }

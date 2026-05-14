@@ -153,6 +153,86 @@ export function ScheduleManager() {
   )
 }
 
+export function ScheduleOverview() {
+  const [tasks, setTasks] = useState<FollowupTask[]>([])
+  const [message, setMessage] = useState("正在加载日程...")
+
+  async function load() {
+    try {
+      const data = await authedJson<FollowupTask[]>("/api/v1/followup/tasks")
+      setTasks(data)
+      setMessage("")
+    } catch (error) {
+      setMessage(`日程 API 未连接：${error instanceof Error ? error.message : "未知错误"}`)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const today = new Date().toISOString().slice(0, 10)
+  const events = useMemo<ScheduleEvent[]>(() => tasks.map((task) => {
+    const due = normalizeDateTime(task.dueAt)
+    return {
+      id: task.id,
+      type: "followup",
+      title: `${task.patientName || task.patientId}随访`,
+      date: due.date,
+      time: due.time,
+      patientName: task.patientName,
+      patientPhone: task.patientPhone,
+      owner: task.assigneeName || task.role,
+      status: task.status,
+      priority: task.priority,
+      description: `${channelLabels[task.channel] || task.channel || "随访"} · ${task.lastEvent || "待处理"}`,
+    }
+  }).filter((event) => event.date), [tasks])
+  const activeEvents = events.filter((event) => !["completed", "failed"].includes(event.status))
+  const todayCount = activeEvents.filter((event) => event.date === today).length
+  const overdueCount = activeEvents.filter((event) => event.date < today).length
+  const upcoming = activeEvents.filter((event) => event.date >= today).sort(compareEvent).slice(0, 5)
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date()
+    date.setDate(date.getDate() + index)
+    return date.toISOString().slice(0, 10)
+  })
+  const eventsByDate = groupByDate(activeEvents)
+
+  return <article className="rounded-lg border border-line bg-surface p-5">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h2 className="text-base font-semibold">日程日历</h2>
+        <p className="mt-1 text-sm text-muted">随访任务和提醒汇总</p>
+      </div>
+      <a className="rounded-lg border border-line px-3 py-1.5 text-sm text-primary hover:border-primary" href="/schedule">进入日历</a>
+    </div>
+    {message && <div className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-primary">{message}</div>}
+    <div className="mt-4 grid grid-cols-2 gap-3">
+      <Metric label="今日待办" value={todayCount} />
+      <Metric label="逾期提醒" value={overdueCount} tone={overdueCount > 0 ? "danger" : "normal"} />
+    </div>
+    <div className="mt-4 grid grid-cols-7 gap-1">
+      {weekDays.map((date) => {
+        const count = eventsByDate[date]?.length || 0
+        return <a key={date} href="/schedule" className={`rounded-lg border px-2 py-2 text-center ${date === today ? "border-primary bg-blue-50 text-primary" : "border-line hover:border-primary"}`}>
+          <div className="text-xs text-muted">{["日", "一", "二", "三", "四", "五", "六"][new Date(date).getDay()]}</div>
+          <div className="mt-1 text-sm font-semibold">{Number(date.slice(-2))}</div>
+          <div className={`mx-auto mt-1 h-1.5 w-1.5 rounded-full ${count > 0 ? "bg-primary" : "bg-gray-200"}`} />
+        </a>
+      })}
+    </div>
+    <div className="mt-4 grid gap-2">
+      {upcoming.length === 0 && !message && <div className="rounded-lg border border-dashed border-line p-4 text-sm text-muted">近期暂无待办日程。</div>}
+      {upcoming.map((event) => <a key={event.id} href="/followups/tasks" className="rounded-lg border border-line px-3 py-2 hover:border-primary">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-sm font-medium">{event.title}</span>
+          <span className="shrink-0 text-xs text-muted">{event.date.slice(5)} {event.time}</span>
+        </div>
+        <div className="mt-1 truncate text-xs text-muted">{event.description}</div>
+      </a>)}
+    </div>
+  </article>
+}
+
 function normalizeDateTime(value: string) {
   if (!value) return { date: "", time: "" }
   const normalized = value.replace(" ", "T")

@@ -243,6 +243,61 @@ ON DUPLICATE KEY UPDATE permission_id = VALUES(permission_id)
 		return err
 	}
 	if _, err := db.ExecContext(ctx, `
+INSERT INTO permissions (id, resource, action, description) VALUES
+(UUID(), '/api/v1/patients', 'read', '查看患者档案'),
+(UUID(), '/api/v1/forms', 'read', '查看表单问卷'),
+(UUID(), '/api/v1/forms', 'update', '维护表单问卷'),
+(UUID(), '/api/v1/forms', '*', '管理表单问卷'),
+(UUID(), '/api/v1/followup', 'read', '查看随访任务'),
+(UUID(), '/api/v1/followup', 'update', '执行随访任务'),
+(UUID(), '/api/v1/followup', '*', '管理随访任务'),
+(UUID(), '/api/v1/reports', 'read', '查看分析报表'),
+(UUID(), '/api/v1/reports', '*', '管理分析报表'),
+(UUID(), '/api/v1/data-sources', 'read', '查看数据源'),
+(UUID(), '/api/v1/complaints', 'read', '查看评价投诉'),
+(UUID(), '/api/v1/complaints', 'create', '新建评价投诉'),
+(UUID(), '/api/v1/complaints', 'update', '处理评价投诉'),
+(UUID(), '/api/v1/call-center', 'read', '查看呼叫中心'),
+(UUID(), '/api/v1/call-center', 'create', '新建呼叫任务'),
+(UUID(), '/api/v1/call-center', 'update', '维护呼叫中心')
+ON DUPLICATE KEY UPDATE description = VALUES(description)
+`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT role_id, id FROM (
+  SELECT 'doctor' role_id, '/api/v1/patients' resource, 'read' action UNION ALL
+  SELECT 'doctor', '/api/v1/forms', 'read' UNION ALL
+  SELECT 'doctor', '/api/v1/followup', '*' UNION ALL
+  SELECT 'doctor', '/api/v1/reports', 'read' UNION ALL
+  SELECT 'doctor', '/api/v1/complaints', 'read' UNION ALL
+  SELECT 'doctor', '/api/v1/complaints', 'update' UNION ALL
+  SELECT 'nurse', '/api/v1/patients', 'read' UNION ALL
+  SELECT 'nurse', '/api/v1/followup', 'read' UNION ALL
+  SELECT 'nurse', '/api/v1/followup', 'update' UNION ALL
+  SELECT 'nurse', '/api/v1/forms', 'read' UNION ALL
+  SELECT 'nurse', '/api/v1/complaints', 'read' UNION ALL
+  SELECT 'nurse', '/api/v1/complaints', 'create' UNION ALL
+  SELECT 'analyst', '/api/v1/forms', '*' UNION ALL
+  SELECT 'analyst', '/api/v1/reports', '*' UNION ALL
+  SELECT 'analyst', '/api/v1/data-sources', 'read' UNION ALL
+  SELECT 'analyst', '/api/v1/complaints', 'read' UNION ALL
+  SELECT 'agent', '/api/v1/patients', 'read' UNION ALL
+  SELECT 'agent', '/api/v1/followup', 'read' UNION ALL
+  SELECT 'agent', '/api/v1/followup', 'update' UNION ALL
+  SELECT 'agent', '/api/v1/call-center', 'read' UNION ALL
+  SELECT 'agent', '/api/v1/call-center', 'create' UNION ALL
+  SELECT 'agent', '/api/v1/call-center', 'update' UNION ALL
+  SELECT 'agent', '/api/v1/complaints', 'read' UNION ALL
+  SELECT 'agent', '/api/v1/complaints', 'create'
+) wanted
+JOIN permissions p ON p.resource = wanted.resource AND p.action = wanted.action
+ON DUPLICATE KEY UPDATE permission_id = VALUES(permission_id)
+`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
 INSERT INTO users (id, username, display_name, password_hash)
 VALUES (?, ?, ?, ?)
 `, adminID, admin.Username, admin.DisplayName, passwordHash); err != nil {

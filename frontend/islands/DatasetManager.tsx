@@ -26,6 +26,12 @@ const statusLabel = {
   active: "活跃",
   archived: "归档",
 }
+const datasetFlow = [
+  { title: "数据源接入", text: "从 HIS、EMR、随访、投诉、检查检验等系统同步或导入。" },
+  { title: "数据模板", text: "定义患者、就诊、用药、病史、检查、随访记录的字段口径。" },
+  { title: "项目绑定", text: "项目选择数据范围，表单自动带入患者和就诊信息。" },
+  { title: "分析报表", text: "按项目权限汇聚到数据中心、分析报表和患者 360。" },
+]
 
 export function DatasetManager() {
   const [datasets, setDatasets] = useState<Dataset[]>([])
@@ -120,6 +126,18 @@ export function DatasetManager() {
     <div className="grid gap-5">
       {view === "list" && (
       <section className="grid gap-5">
+        <div className="rounded-lg border border-line bg-surface p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">数据模板闭环</h2>
+              <p className="mt-1 text-sm text-muted">数据集不是孤立表格，它负责把系统字段、项目数据范围和分析报表串起来。</p>
+            </div>
+            <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white" onClick={newDataset}>新建数据模板</button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            {datasetFlow.map((step, index) => <FlowStep key={step.title} index={index + 1} title={step.title} text={step.text} />)}
+          </div>
+        </div>
         <div className="grid gap-4 md:grid-cols-3">
           <article className="rounded-lg border border-line bg-surface p-4">
             <p className="text-sm text-muted">数据集总数</p>
@@ -142,7 +160,7 @@ export function DatasetManager() {
               <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white" onClick={search}>搜索</button>
             </div>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-primary" onClick={newDataset}>
-              新建数据集
+              新建数据模板
             </button>
           </div>
           {message && <div className="border-b border-line bg-blue-50 px-4 py-3 text-sm text-primary">{message}</div>}
@@ -150,7 +168,7 @@ export function DatasetManager() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-muted">
                 <tr>
-                  <th className="px-4 py-3 text-left">名称</th>
+                  <th className="px-4 py-3 text-left">数据模板 / 数据集</th>
                   <th className="px-4 py-3 text-left">负责人</th>
                   <th className="px-4 py-3 text-left">记录数</th>
                   <th className="px-4 py-3 text-left">表单数</th>
@@ -186,7 +204,7 @@ export function DatasetManager() {
                 ))}
                 {datasets.length === 0 && (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm text-muted" colSpan={7}>暂无数据集</td>
+                    <td className="px-4 py-8 text-center text-sm text-muted" colSpan={7}>暂无数据模板。先定义数据范围，再给项目绑定使用。</td>
                   </tr>
                 )}
               </tbody>
@@ -200,8 +218,8 @@ export function DatasetManager() {
       <section className="rounded-lg border border-line bg-surface">
         <div className="flex items-center justify-between gap-3 border-b border-line p-4">
           <div>
-            <h2 className="text-base font-semibold">{selected ? "编辑数据集" : "新建数据集"}</h2>
-            <p className="mt-1 text-sm text-muted">维护研究数据集、负责人、记录规模和状态。</p>
+            <h2 className="text-base font-semibold">{selected ? "编辑数据模板 / 数据集" : "新建数据模板 / 数据集"}</h2>
+            <p className="mt-1 text-sm text-muted">维护数据口径、负责人、记录规模和状态，后续由项目引用。</p>
           </div>
           <div className="flex gap-2">
             <button className="rounded-lg border border-line px-4 py-2 text-sm hover:border-primary" onClick={backToList}>返回列表</button>
@@ -228,6 +246,9 @@ export function DatasetManager() {
             <span className="text-muted">负责人/科室</span>
             <input className="rounded-lg border border-line px-3 py-2" value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} />
           </label>
+          <div className="rounded-lg border border-line bg-gray-50 p-3 text-sm leading-6 text-muted md:col-span-2 xl:col-span-3">
+            建议口径：患者主索引、就诊记录、用药记录、既往史、检查记录、检验结果、投诉评价、随访记录。项目“表单数据”选择数据范围后，公开问卷和电话随访页会自动拉取。
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="grid gap-1">
               <span className="text-muted">记录数</span>
@@ -253,4 +274,11 @@ export function DatasetManager() {
       )}
     </div>
   )
+}
+
+function FlowStep({ index, title, text }: { index: number; title: string; text: string }) {
+  return <div className="rounded-lg border border-line bg-white p-3">
+    <div className="flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-50 text-xs font-semibold text-primary">{index}</span><span className="font-medium">{title}</span></div>
+    <div className="mt-2 text-xs leading-5 text-muted">{text}</div>
+  </div>
 }

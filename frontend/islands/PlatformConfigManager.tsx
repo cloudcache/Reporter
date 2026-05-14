@@ -61,7 +61,7 @@ const meta = {
 }
 
 const empty = {
-  sip: { id: "", name: "", wssUrl: "", domain: "", proxy: "", config: { enabled: false, transport: "udp", trunkUri: "sip:{phone}@carrier.example.local" } },
+  sip: { id: "", name: "", wssUrl: "", domain: "", proxy: "", config: { enabled: true, transport: "udp", trunkUri: "sip:{phone}@carrier.example.local", dialTimeoutSeconds: 15 } },
   storage: { id: "", name: "", kind: "local", basePath: "data/recordings", baseUri: "", config: { pathStrategy: "yyyy/mm/dd" } },
   recording: { id: "", name: "", mode: "server", storageConfigId: "STOR001", format: "wav", retentionDays: 365, autoStart: true, autoStop: true, config: { source: "pbx_or_diago" } },
   models: { id: "", name: "", kind: "openai-compatible", mode: "offline", endpoint: "", model: "", credentialRef: "", config: { audio_analysis: true, json_schema: true } },
@@ -207,11 +207,22 @@ function summary(section: Section, item: ConfigItem) {
 function renderFields(section: Section, draft: ConfigItem, setDraft: (item: ConfigItem) => void) {
   if (section === "sip") {
     const item = draft as SipEndpoint
+    const config = item.config || {}
     return <>
       <Text label="名称" value={item.name} onChange={(value) => setDraft({ ...item, name: value })} />
       <Text label="WSS 地址" value={item.wssUrl} onChange={(value) => setDraft({ ...item, wssUrl: value })} />
       <Text label="Domain" value={item.domain} onChange={(value) => setDraft({ ...item, domain: value })} />
       <Text label="Proxy" value={item.proxy} onChange={(value) => setDraft({ ...item, proxy: value })} />
+      <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3">
+        <input type="checkbox" checked={Boolean(config.enabled)} onChange={(event) => setDraft({ ...item, config: { ...config, enabled: event.target.checked } })} />
+        <span className="text-muted">启用真实拨号</span>
+      </label>
+      <Select label="传输协议" value={String(config.transport || "udp")} options={["udp", "tcp", "ws", "wss"]} onChange={(value) => setDraft({ ...item, config: { ...config, transport: value } })} />
+      <Text label="中继 URI 模板" value={String(config.trunkUri || "")} onChange={(value) => setDraft({ ...item, config: { ...config, trunkUri: value } })} />
+      <Text label="中继域名" value={String(config.trunkDomain || "")} onChange={(value) => setDraft({ ...item, config: { ...config, trunkDomain: value } })} />
+      <Text label="SIP 用户名" value={String(config.username || "")} onChange={(value) => setDraft({ ...item, config: { ...config, username: value } })} />
+      <Text label="SIP 密码" value={String(config.password || "")} onChange={(value) => setDraft({ ...item, config: { ...config, password: value } })} />
+      <NumberField label="拨号超时秒数" value={Number(config.dialTimeoutSeconds || 15)} onChange={(value) => setDraft({ ...item, config: { ...config, dialTimeoutSeconds: value || 15 } })} />
     </>
   }
   if (section === "storage") {

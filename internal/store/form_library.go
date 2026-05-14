@@ -9,7 +9,7 @@ import (
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) FormLibrary() []domain.FormLibraryItem {
+func (s *Store) FormLibrary() []domain.FormLibraryItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.FormLibraryItem, len(s.formLibrary))
@@ -17,7 +17,7 @@ func (s *MemoryStore) FormLibrary() []domain.FormLibraryItem {
 	return items
 }
 
-func (s *MemoryStore) LoadFormLibraryFromSQL(ctx context.Context, driver, dsn string) error {
+func (s *Store) LoadFormLibraryFromSQL(ctx context.Context, driver, dsn string) error {
 	if strings.TrimSpace(dsn) == "" {
 		return nil
 	}

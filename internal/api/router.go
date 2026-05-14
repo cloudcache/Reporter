@@ -1,12 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"math"
 	"math/rand"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,19 +36,20 @@ import (
 type Dependencies struct {
 	Config config.Config
 	Log    zerolog.Logger
-	Store  *store.MemoryStore
+	Store  *store.Store
 	SIP    sipgateway.Gateway
 }
 
 type Server struct {
 	cfg           config.Config
 	log           zerolog.Logger
-	store         *store.MemoryStore
+	store         *store.Store
 	authz         *rbac.Authorizer
 	sip           sipgateway.Gateway
 	authMu        sync.Mutex
 	loginFailures map[string]int
 	refreshHits   map[string][]time.Time
+	publicHits    map[string][]time.Time
 	captchas      map[string]captchaChallenge
 }
 
@@ -76,6 +82,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		sip:           deps.SIP,
 		loginFailures: map[string]int{},
 		refreshHits:   map[string][]time.Time{},
+		publicHits:    map[string][]time.Time{},
 		captchas:      map[string]captchaChallenge{},
 	}
 	if s.sip == nil {
@@ -171,9 +178,15 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Post("/data-sources/{id}/sync", s.withPermission("/api/v1/data-sources", "update", s.syncDataSource))
 			r.Get("/integration-channels", s.withPermission("/api/v1/system", "read", s.listIntegrationChannels))
 			r.Post("/integration-channels", s.withPermission("/api/v1/system", "update", s.upsertIntegrationChannel))
+			r.Get("/projects", s.withPermission("/api/v1/forms", "read", s.listSatisfactionProjects))
+			r.Post("/projects", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionProject))
+			r.Put("/projects/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionProject))
+			r.Delete("/projects/{id}", s.withPermission("/api/v1/forms", "delete", s.deleteSatisfactionProject))
+			r.Post("/graphql", s.withPermission("/api/v1/forms", "read", s.graphQLQuery))
 			r.Get("/satisfaction/projects", s.withPermission("/api/v1/forms", "read", s.listSatisfactionProjects))
 			r.Post("/satisfaction/projects", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionProject))
 			r.Put("/satisfaction/projects/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionProject))
+			r.Delete("/satisfaction/projects/{id}", s.withPermission("/api/v1/forms", "delete", s.deleteSatisfactionProject))
 			r.Get("/satisfaction/submissions", s.withPermission("/api/v1/forms", "read", s.listSurveySubmissions))
 			r.Get("/satisfaction/submissions/{id}", s.withPermission("/api/v1/forms", "read", s.getSurveySubmission))
 			r.Put("/satisfaction/submissions/{id}/quality", s.withPermission("/api/v1/forms", "update", s.updateSurveySubmissionQuality))
@@ -188,6 +201,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/satisfaction/cleaning-rules", s.withPermission("/api/v1/forms", "read", s.listSatisfactionCleaningRules))
 			r.Post("/satisfaction/cleaning-rules", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionCleaningRule))
 			r.Put("/satisfaction/cleaning-rules/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionCleaningRule))
+			r.Post("/satisfaction/cleaning-rules/reapply", s.withPermission("/api/v1/forms", "update", s.reapplySatisfactionCleaningRules))
 			r.Get("/satisfaction/issues", s.withPermission("/api/v1/forms", "read", s.listSatisfactionIssues))
 			r.Post("/satisfaction/issues", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIssue))
 			r.Put("/satisfaction/issues/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIssue))
@@ -197,12 +211,20 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Post("/satisfaction/issues/generate", s.withPermission("/api/v1/forms", "update", s.generateSatisfactionIssues))
 			r.Get("/survey-share-links", s.withPermission("/api/v1/forms", "read", s.listSurveyShareLinks))
 			r.Post("/survey-share-links", s.withPermission("/api/v1/forms", "update", s.createSurveyShareLink))
+			r.Get("/survey-channel-recipients", s.withPermission("/api/v1/forms", "read", s.listSurveyChannelRecipients))
+			r.Get("/survey-channel-deliveries", s.withPermission("/api/v1/forms", "read", s.listSurveyChannelDeliveries))
+			r.Post("/survey-channel-deliveries", s.withPermission("/api/v1/forms", "update", s.createSurveyChannelDeliveries))
+			r.Post("/survey-channel-deliveries/send", s.withPermission("/api/v1/forms", "update", s.sendSurveyChannelDeliveries))
+			r.Post("/survey-channel-deliveries/{id}/send", s.withPermission("/api/v1/forms", "update", s.sendSurveyChannelDelivery))
+			r.Post("/survey-channel-deliveries/{id}/receipt", s.withPermission("/api/v1/forms", "update", s.updateSurveyChannelDeliveryReceipt))
 
 			r.Get("/reports", s.withPermission("/api/v1/reports", "read", s.listReports))
 			r.Post("/reports", s.withPermission("/api/v1/reports", "create", s.createReport))
 			r.Get("/reports/{id}", s.withPermission("/api/v1/reports", "read", s.getReport))
 			r.Put("/reports/{id}", s.withPermission("/api/v1/reports", "update", s.updateReport))
 			r.Post("/reports/{id}/query", s.withPermission("/api/v1/reports", "query", s.queryReport))
+			r.Get("/reports/{id}/export", s.withPermission("/api/v1/reports", "read", s.exportReport))
+			r.Get("/reports/{id}/insights", s.withPermission("/api/v1/reports", "read", s.reportInsights))
 			r.Post("/reports/{id}/widgets", s.withPermission("/api/v1/reports", "update", s.addReportWidget))
 			r.Get("/evaluation-complaints", s.withPermission("/api/v1/complaints", "read", s.listEvaluationComplaints))
 			r.Post("/evaluation-complaints", s.withPermission("/api/v1/complaints", "create", s.createEvaluationComplaint))
@@ -423,7 +445,37 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	user, _ := currentUser(r)
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":          user.ID,
+		"username":    user.Username,
+		"displayName": user.DisplayName,
+		"roles":       user.Roles,
+		"permissions": s.effectivePermissions(user),
+	})
+}
+
+func (s *Server) effectivePermissions(user domain.User) []string {
+	seen := map[string]bool{}
+	for _, roleID := range user.Roles {
+		if roleID == "admin" {
+			return []string{"*:*"}
+		}
+		for _, role := range s.store.Roles() {
+			if role.ID != roleID {
+				continue
+			}
+			for _, permission := range role.Permissions {
+				if !seen[permission] {
+					seen[permission] = true
+				}
+			}
+		}
+	}
+	items := make([]string, 0, len(seen))
+	for permission := range seen {
+		items = append(items, permission)
+	}
+	return items
 }
 
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
@@ -1088,7 +1140,8 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := domain.DataSourceSyncResult{Rows: records}
-	for _, record := range records {
+	for rowIndex, record := range records {
+		quality := domain.DataSourceQualityResult{RowIndex: rowIndex, Status: "valid"}
 		patientFields := record.Entities["patient"]
 		var patient domain.Patient
 		if len(patientFields) > 0 {
@@ -1107,12 +1160,16 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 					patient = saved
 					result.Patients = append(result.Patients, saved)
 				}
+			} else {
+				quality.Status = "invalid"
+				quality.Messages = append(quality.Messages, "缺少 patient.patientNo，无法稳定写入患者主索引")
 			}
 		}
 
 		visitFields := record.Entities["visit"]
+		var visit domain.ClinicalVisit
 		if len(visitFields) > 0 {
-			visit := datamapping.ApplyVisitFields(visitFields, domain.ClinicalVisit{PatientID: patient.ID})
+			visit = datamapping.ApplyVisitFields(visitFields, domain.ClinicalVisit{PatientID: patient.ID})
 			if visit.PatientID == "" {
 				visit.PatientID = patient.ID
 			}
@@ -1128,7 +1185,11 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 						result.Updated++
 					}
 					result.Visits = append(result.Visits, saved)
+					visit = saved
 				}
+			} else if hasMeaningfulFields(visitFields) {
+				quality.Status = "suspicious"
+				quality.Messages = append(quality.Messages, "存在就诊字段但缺少 visit.visitNo，已跳过就诊写入")
 			}
 		}
 
@@ -1162,9 +1223,195 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if patient.ID != "" || hasClinicalEntities(record.Entities) {
+			s.syncClinicalEntities(r.Context(), source, record, patient.ID, visit.ID, req.DryRun, &result, &quality)
+		}
+		if len(quality.Messages) == 0 {
+			quality.Messages = append(quality.Messages, "字段映射、必填项和标准实体写入校验通过")
+		}
+		result.Quality = append(result.Quality, quality)
 	}
 	s.audit(r, actorID(r), "data-source.sync", "/api/v1/data-sources/"+source.ID, nil, result)
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) syncClinicalEntities(ctx context.Context, source domain.DataSource, record domain.MappedRecord, patientID string, visitID string, dryRun bool, result *domain.DataSourceSyncResult, quality *domain.DataSourceQualityResult) {
+	sourceSystem := firstNonEmpty(source.Name, source.ID, source.Protocol)
+	patientID = firstNonEmpty(patientID, fieldString(record.Entities["patient"], "id"), fieldString(record.Entities["diagnosis"], "patientId"), fieldString(record.Entities["history"], "patientId"), fieldString(record.Entities["medication"], "patientId"), fieldString(record.Entities["lab"], "patientId"), fieldString(record.Entities["exam"], "patientId"), fieldString(record.Entities["surgery"], "patientId"), fieldString(record.Entities["followup"], "patientId"), fieldString(record.Entities["fact"], "patientId"))
+	visitID = firstNonEmpty(visitID, fieldString(record.Entities["visit"], "id"))
+	if patientID == "" {
+		if hasClinicalEntities(record.Entities) {
+			quality.Status = "suspicious"
+			quality.Messages = append(quality.Messages, "临床事实缺少 patientId，未写入诊断/用药/检验等事实表")
+		}
+		return
+	}
+	if fields := record.Entities["diagnosis"]; len(fields) > 0 {
+		item := datamapping.ApplyDiagnosisFields(fields, domain.PatientDiagnosis{PatientID: patientID, VisitID: visitID, SourceSystem: sourceSystem})
+		if item.DiagnosisName == "" {
+			appendQualityIssue(quality, "诊断映射缺少 diagnosis.diagnosisName")
+		} else if dryRun {
+			result.Diagnoses = append(result.Diagnoses, item)
+		} else if saved, created, err := s.store.UpsertPatientDiagnosis(ctx, item); err == nil {
+			countSync(result, created)
+			result.Diagnoses = append(result.Diagnoses, saved)
+		} else {
+			appendQualityError(result, quality, "诊断写入失败", err)
+		}
+	}
+	if fields := record.Entities["history"]; len(fields) > 0 {
+		item := datamapping.ApplyHistoryFields(fields, domain.PatientHistory{PatientID: patientID, SourceSystem: sourceSystem})
+		if item.Content == "" && item.Title == "" {
+			appendQualityIssue(quality, "既往史映射缺少 history.content 或 history.title")
+		} else if dryRun {
+			result.Histories = append(result.Histories, item)
+		} else if saved, created, err := s.store.UpsertPatientHistory(ctx, item); err == nil {
+			countSync(result, created)
+			result.Histories = append(result.Histories, saved)
+		} else {
+			appendQualityError(result, quality, "既往史写入失败", err)
+		}
+	}
+	if fields := record.Entities["medication"]; len(fields) > 0 {
+		item := datamapping.ApplyMedicationFields(fields, domain.MedicationOrder{PatientID: patientID, VisitID: visitID})
+		if item.DrugName == "" {
+			appendQualityIssue(quality, "用药映射缺少 medication.drugName")
+		} else if dryRun {
+			result.Medications = append(result.Medications, item)
+		} else if saved, created, err := s.store.UpsertMedicationOrder(ctx, item); err == nil {
+			countSync(result, created)
+			result.Medications = append(result.Medications, saved)
+		} else {
+			appendQualityError(result, quality, "用药写入失败", err)
+		}
+	}
+	if fields := record.Entities["lab"]; len(fields) > 0 {
+		item := datamapping.ApplyLabReportFields(fields, domain.LabReport{PatientID: patientID, VisitID: visitID, SourceSystem: sourceSystem})
+		if item.ReportName == "" {
+			appendQualityIssue(quality, "检验报告映射缺少 lab.reportName")
+		} else if dryRun {
+			result.LabReports = append(result.LabReports, item)
+		} else if saved, created, err := s.store.UpsertLabReport(ctx, item); err == nil {
+			countSync(result, created)
+			if labResultFields := record.Entities["labResult"]; len(labResultFields) > 0 {
+				labResult := datamapping.ApplyLabResultFields(labResultFields, domain.LabResult{ReportID: saved.ID})
+				if labResult.ItemName == "" {
+					appendQualityIssue(quality, "检验结果映射缺少 labResult.itemName")
+				} else if savedResult, createdResult, err := s.store.UpsertLabResult(ctx, labResult); err == nil {
+					countSync(result, createdResult)
+					saved.Results = append(saved.Results, savedResult)
+				} else {
+					appendQualityError(result, quality, "检验结果写入失败", err)
+				}
+			}
+			result.LabReports = append(result.LabReports, saved)
+		} else {
+			appendQualityError(result, quality, "检验报告写入失败", err)
+		}
+	}
+	if fields := record.Entities["exam"]; len(fields) > 0 {
+		item := datamapping.ApplyExamReportFields(fields, domain.ExamReport{PatientID: patientID, VisitID: visitID, SourceSystem: sourceSystem})
+		if item.ExamName == "" {
+			appendQualityIssue(quality, "检查报告映射缺少 exam.examName")
+		} else if dryRun {
+			result.ExamReports = append(result.ExamReports, item)
+		} else if saved, created, err := s.store.UpsertExamReport(ctx, item); err == nil {
+			countSync(result, created)
+			result.ExamReports = append(result.ExamReports, saved)
+		} else {
+			appendQualityError(result, quality, "检查报告写入失败", err)
+		}
+	}
+	if fields := record.Entities["surgery"]; len(fields) > 0 {
+		item := datamapping.ApplySurgeryFields(fields, domain.SurgeryRecord{PatientID: patientID, VisitID: visitID, SourceSystem: sourceSystem})
+		if item.OperationName == "" {
+			appendQualityIssue(quality, "手术记录映射缺少 surgery.operationName")
+		} else if dryRun {
+			result.Surgeries = append(result.Surgeries, item)
+		} else if saved, created, err := s.store.UpsertSurgeryRecord(ctx, item); err == nil {
+			countSync(result, created)
+			result.Surgeries = append(result.Surgeries, saved)
+		} else {
+			appendQualityError(result, quality, "手术记录写入失败", err)
+		}
+	}
+	if fields := record.Entities["followup"]; len(fields) > 0 {
+		item := datamapping.ApplyFollowupRecordFields(fields, domain.FollowupRecord{PatientID: patientID, VisitID: visitID, SourceSystem: sourceSystem})
+		if item.Summary == "" && item.TaskID == "" {
+			appendQualityIssue(quality, "随访记录映射缺少 followup.summary 或 followup.taskId")
+		} else if dryRun {
+			result.Followups = append(result.Followups, item)
+		} else if saved, created, err := s.store.UpsertFollowupRecord(ctx, item); err == nil {
+			countSync(result, created)
+			result.Followups = append(result.Followups, saved)
+		} else {
+			appendQualityError(result, quality, "随访记录写入失败", err)
+		}
+	}
+	if fields := record.Entities["fact"]; len(fields) > 0 {
+		item := datamapping.ApplyInterviewFactFields(fields, domain.InterviewExtractedFact{PatientID: patientID, VisitID: visitID})
+		if item.FactType == "" || item.FactKey == "" || item.FactLabel == "" {
+			appendQualityIssue(quality, "访谈事实映射缺少 fact.factType/factKey/factLabel")
+		} else if dryRun {
+			result.InterviewFacts = append(result.InterviewFacts, item)
+		} else if saved, created, err := s.store.UpsertInterviewExtractedFact(ctx, item); err == nil {
+			countSync(result, created)
+			result.InterviewFacts = append(result.InterviewFacts, saved)
+		} else {
+			appendQualityError(result, quality, "访谈事实写入失败", err)
+		}
+	}
+}
+
+func hasClinicalEntities(entities map[string]map[string]interface{}) bool {
+	for _, key := range []string{"diagnosis", "history", "medication", "lab", "labResult", "exam", "surgery", "followup", "fact"} {
+		if len(entities[key]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMeaningfulFields(fields map[string]interface{}) bool {
+	for _, value := range fields {
+		if strings.TrimSpace(fmt.Sprint(value)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func fieldString(fields map[string]interface{}, key string) string {
+	if fields == nil {
+		return ""
+	}
+	value, ok := fields[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func countSync(result *domain.DataSourceSyncResult, created bool) {
+	if created {
+		result.Created++
+	} else {
+		result.Updated++
+	}
+}
+
+func appendQualityIssue(quality *domain.DataSourceQualityResult, message string) {
+	if quality.Status == "valid" {
+		quality.Status = "suspicious"
+	}
+	quality.Messages = append(quality.Messages, message)
+}
+
+func appendQualityError(result *domain.DataSourceSyncResult, quality *domain.DataSourceQualityResult, label string, err error) {
+	quality.Status = "invalid"
+	message := fmt.Sprintf("%s：%v", label, err)
+	quality.Messages = append(quality.Messages, message)
+	result.Errors = append(result.Errors, message)
 }
 
 func (s *Server) listIntegrationChannels(w http.ResponseWriter, r *http.Request) {
@@ -1204,6 +1451,17 @@ func (s *Server) createSurveyShareLink(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &item) {
 		return
 	}
+	if item.Config == nil {
+		item.Config = map[string]interface{}{}
+	}
+	if form, version, ok := s.resolveFormVersion(item.FormTemplateID, configString(item.Config, "formVersionId")); ok {
+		item.Config["formId"] = form.ID
+		item.Config["formVersionId"] = version.ID
+		item.Config["formVersion"] = version.Version
+	} else if s.managedFormExists(item.FormTemplateID) {
+		http.Error(w, "selected form has no publishable version", http.StatusBadRequest)
+		return
+	}
 	created, err := s.store.CreateSurveyShareLink(r.Context(), item)
 	if err != nil {
 		statusError(w, err)
@@ -1211,6 +1469,221 @@ func (s *Server) createSurveyShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, actorID(r), "survey-share.create", "/api/v1/survey-share-links/"+created.ID, nil, created)
 	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) listSurveyChannelDeliveries(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SurveyChannelDeliveries(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listSurveyChannelRecipients(w http.ResponseWriter, r *http.Request) {
+	channel := sanitizePlainText(r.URL.Query().Get("channel"), 40)
+	if channel == "" {
+		channel = "sms"
+	}
+	keyword := sanitizePlainText(r.URL.Query().Get("keyword"), 80)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	items := []domain.SurveyChannelRecipient{}
+	for _, patient := range s.store.Patients(keyword) {
+		recipient, source := patientRecipientForChannel(patient, channel)
+		item := domain.SurveyChannelRecipient{
+			PatientID: patient.ID,
+			PatientNo: patient.PatientNo,
+			Name:      patient.Name,
+			Channel:   channel,
+			Recipient: recipient,
+			Source:    source,
+			Available: recipient != "",
+		}
+		if item.Available {
+			items = append(items, item)
+			if len(items) >= limit {
+				break
+			}
+			continue
+		}
+		item.Unavailable = "患者档案缺少" + recipientSourceLabel(channel)
+		items = append(items, item)
+		if len(items) >= limit {
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createSurveyChannelDeliveries(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ShareID    string `json:"shareId"`
+		ProjectID  string `json:"projectId"`
+		Channel    string `json:"channel"`
+		URL        string `json:"url"`
+		Recipients []struct {
+			PatientID string `json:"patientId"`
+			Name      string `json:"name"`
+			Recipient string `json:"recipient"`
+			Source    string `json:"source"`
+		} `json:"recipients"`
+		RecipientValues []string `json:"recipientValues"`
+		RecipientName   string   `json:"recipientName"`
+		Message         string   `json:"message"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.ShareID) == "" || strings.TrimSpace(req.Channel) == "" {
+		http.Error(w, "shareId and channel are required", http.StatusBadRequest)
+		return
+	}
+	items := []domain.SurveyChannelDelivery{}
+	appendItem := func(recipient, name string, config map[string]interface{}) {
+		recipient = sanitizeDeliveryRecipient(req.Channel, recipient)
+		if recipient == "" {
+			return
+		}
+		message := sanitizePlainText(req.Message, 500)
+		if message == "" {
+			message = "请点击链接完成调查：" + sanitizePlainText(req.URL, 300)
+		}
+		if config == nil {
+			config = map[string]interface{}{}
+		}
+		config["url"] = sanitizePlainText(req.URL, 300)
+		items = append(items, domain.SurveyChannelDelivery{
+			ProjectID:     sanitizePlainText(req.ProjectID, 64),
+			ShareID:       sanitizePlainText(req.ShareID, 64),
+			Channel:       sanitizePlainText(req.Channel, 40),
+			Recipient:     recipient,
+			RecipientName: sanitizePlainText(firstNonEmpty(name, req.RecipientName), 120),
+			Status:        "queued",
+			Message:       message,
+			Config:        config,
+		})
+	}
+	for _, recipient := range req.Recipients {
+		config := map[string]interface{}{}
+		if recipient.PatientID != "" {
+			config["patientId"] = sanitizePlainText(recipient.PatientID, 64)
+		}
+		if recipient.Source != "" {
+			config["recipientSource"] = sanitizePlainText(recipient.Source, 80)
+		}
+		appendItem(recipient.Recipient, recipient.Name, config)
+	}
+	for _, recipient := range req.RecipientValues {
+		appendItem(recipient, "", nil)
+	}
+	if len(items) == 0 {
+		http.Error(w, "no valid recipients", http.StatusBadRequest)
+		return
+	}
+	if len(items) > 500 {
+		http.Error(w, "too many recipients", http.StatusBadRequest)
+		return
+	}
+	created, err := s.store.CreateSurveyChannelDeliveries(r.Context(), items)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "survey-channel.delivery.create", "/api/v1/survey-channel-deliveries", nil, created)
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) sendSurveyChannelDelivery(w http.ResponseWriter, r *http.Request) {
+	item, err := s.store.SurveyChannelDelivery(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	sent, err := s.dispatchSurveyChannelDelivery(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "survey-channel.delivery.send", "/api/v1/survey-channel-deliveries/"+sent.ID, item, sent)
+	writeJSON(w, http.StatusOK, sent)
+}
+
+func (s *Server) sendSurveyChannelDeliveries(w http.ResponseWriter, r *http.Request) {
+	projectID := sanitizePlainText(r.URL.Query().Get("projectId"), 64)
+	items, err := s.store.SurveyChannelDeliveries(r.Context(), projectID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	updated := []domain.SurveyChannelDelivery{}
+	for _, item := range items {
+		if item.Status != "queued" && item.Status != "failed" {
+			continue
+		}
+		sent, err := s.dispatchSurveyChannelDelivery(r.Context(), item)
+		if err != nil {
+			statusError(w, err)
+			return
+		}
+		updated = append(updated, sent)
+		if len(updated) >= 100 {
+			break
+		}
+	}
+	s.audit(r, actorID(r), "survey-channel.delivery.batch_send", "/api/v1/survey-channel-deliveries/send", nil, updated)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) updateSurveyChannelDeliveryReceipt(w http.ResponseWriter, r *http.Request) {
+	item, err := s.store.SurveyChannelDelivery(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	var req struct {
+		Status      string                 `json:"status"`
+		ProviderRef string                 `json:"providerRef"`
+		Error       string                 `json:"error"`
+		Receipt     map[string]interface{} `json:"receipt"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	status := sanitizePlainText(req.Status, 32)
+	switch status {
+	case "", "delivered":
+		item.Status = "delivered"
+	case "sent", "failed":
+		item.Status = status
+	default:
+		http.Error(w, "unsupported receipt status", http.StatusBadRequest)
+		return
+	}
+	item.ProviderRef = firstNonEmpty(sanitizePlainText(req.ProviderRef, 128), item.ProviderRef)
+	item.Error = sanitizePlainText(req.Error, 500)
+	if item.SentAt == "" && item.Status != "failed" {
+		item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+	}
+	if item.Config == nil {
+		item.Config = map[string]interface{}{}
+	}
+	item.Config["receipt"] = map[string]interface{}{
+		"status":      item.Status,
+		"providerRef": item.ProviderRef,
+		"error":       item.Error,
+		"payload":     req.Receipt,
+		"receivedAt":  time.Now().UTC().Format("2006-01-02 15:04:05"),
+	}
+	updated, err := s.store.UpdateSurveyChannelDelivery(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "survey-channel.delivery.receipt", "/api/v1/survey-channel-deliveries/"+updated.ID+"/receipt", item, updated)
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (s *Server) listSatisfactionProjects(w http.ResponseWriter, r *http.Request) {
@@ -1237,6 +1710,17 @@ func (s *Server) upsertSatisfactionProject(w http.ResponseWriter, r *http.Reques
 	}
 	s.audit(r, actorID(r), "satisfaction-project.upsert", "/api/v1/satisfaction/projects/"+saved.ID, nil, saved)
 	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) deleteSatisfactionProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	deleted, err := s.store.DeleteSatisfactionProject(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "project.delete", "/api/v1/projects/"+id, deleted, nil)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) listSurveySubmissions(w http.ResponseWriter, r *http.Request) {
@@ -1280,16 +1764,58 @@ func (s *Server) satisfactionStats(w http.ResponseWriter, r *http.Request) {
 		statusError(w, err)
 		return
 	}
+	stats := buildSatisfactionAnalysis(items)
+	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *Server) graphQLQuery(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Query     string                 `json:"query"`
+		Variables map[string]interface{} `json:"variables"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !strings.Contains(req.Query, "satisfactionAnalysis") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{}})
+		return
+	}
+	projectID := sanitizePlainText(fmt.Sprint(req.Variables["projectId"]), 64)
+	items, err := s.store.SurveySubmissions(r.Context(), projectID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"satisfactionAnalysis": buildSatisfactionAnalysis(items),
+		},
+	})
+}
+
+func buildSatisfactionAnalysis(items []domain.SurveySubmission) map[string]interface{} {
 	stats := map[string]interface{}{
 		"total":             len(items),
 		"valid":             0,
 		"pending":           0,
 		"suspicious":        0,
+		"invalid":           0,
 		"byChannel":         map[string]int{},
 		"scoreAverage":      0,
 		"departmentRanking": map[string]map[string]float64{},
 		"indicatorScores":   map[string]map[string]float64{},
 		"lowReasons":        map[string]int{},
+		"trend":             map[string]map[string]float64{},
+		"crossAnalysis":     map[string]map[string]map[string]float64{},
+		"importanceMatrix":  map[string]map[string]float64{},
+		"dimensionRankings": map[string]map[string]map[string]float64{},
+		"jobAnalysis":       map[string]map[string]float64{},
+		"shortBoards":       []map[string]interface{}{},
+		"varianceAnalysis":  []map[string]interface{}{},
+		"correlation":       []map[string]interface{}{},
+		"periodCompare":     []map[string]interface{}{},
+		"graphql":           true,
+		"aiInsights":        []string{},
 	}
 	var scoreSum float64
 	var scoreCount int
@@ -1297,13 +1823,20 @@ func (s *Server) satisfactionStats(w http.ResponseWriter, r *http.Request) {
 		switch item.QualityStatus {
 		case "valid":
 			stats["valid"] = stats["valid"].(int) + 1
+		case "invalid":
+			stats["invalid"] = stats["invalid"].(int) + 1
 		case "suspicious":
+			stats["suspicious"] = stats["suspicious"].(int) + 1
+		case "level1_review", "level2_review":
 			stats["suspicious"] = stats["suspicious"].(int) + 1
 		default:
 			stats["pending"] = stats["pending"].(int) + 1
 		}
 		byChannel := stats["byChannel"].(map[string]int)
 		byChannel[item.Channel]++
+		if item.QualityStatus == "invalid" {
+			continue
+		}
 		for _, key := range []string{"overall_satisfaction", "recommend_score", "service_matrix"} {
 			if score := numericAnswer(item.Answers[key]); score != nil {
 				scoreSum += *score
@@ -1313,13 +1846,28 @@ func (s *Server) satisfactionStats(w http.ResponseWriter, r *http.Request) {
 		addDepartmentScore(stats["departmentRanking"].(map[string]map[string]float64), item)
 		addIndicatorScores(stats["indicatorScores"].(map[string]map[string]float64), item)
 		addLowReasons(stats["lowReasons"].(map[string]int), item)
+		addTrendScore(stats["trend"].(map[string]map[string]float64), item)
+		addCrossAnalysis(stats["crossAnalysis"].(map[string]map[string]map[string]float64), item)
+		addImportanceMatrix(stats["importanceMatrix"].(map[string]map[string]float64), item)
+		addDimensionRankings(stats["dimensionRankings"].(map[string]map[string]map[string]float64), item)
+		addJobAnalysis(stats["jobAnalysis"].(map[string]map[string]float64), item)
 	}
 	if scoreCount > 0 {
 		stats["scoreAverage"] = scoreSum / float64(scoreCount)
 	}
 	stats["departmentRanking"] = averageBuckets(stats["departmentRanking"].(map[string]map[string]float64))
 	stats["indicatorScores"] = averageBuckets(stats["indicatorScores"].(map[string]map[string]float64))
-	writeJSON(w, http.StatusOK, stats)
+	stats["trend"] = averageBuckets(stats["trend"].(map[string]map[string]float64))
+	stats["crossAnalysis"] = averageNestedBuckets(stats["crossAnalysis"].(map[string]map[string]map[string]float64))
+	stats["importanceMatrix"] = importanceBuckets(stats["importanceMatrix"].(map[string]map[string]float64))
+	stats["dimensionRankings"] = averageNestedBuckets(stats["dimensionRankings"].(map[string]map[string]map[string]float64))
+	stats["jobAnalysis"] = averageBuckets(stats["jobAnalysis"].(map[string]map[string]float64))
+	stats["periodCompare"] = periodCompareBuckets(stats["trend"].([]map[string]interface{}))
+	stats["shortBoards"] = shortBoardItems(stats)
+	stats["varianceAnalysis"] = varianceAnalysis(stats["dimensionRankings"].(map[string][]map[string]interface{}))
+	stats["correlation"] = correlationAnalysis(items)
+	stats["aiInsights"] = satisfactionInsights(stats)
+	return stats
 }
 
 func (s *Server) listSatisfactionIndicators(w http.ResponseWriter, r *http.Request) {
@@ -1404,6 +1952,17 @@ func (s *Server) upsertSatisfactionCleaningRule(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) reapplySatisfactionCleaningRules(w http.ResponseWriter, r *http.Request) {
+	projectID := sanitizePlainText(r.URL.Query().Get("projectId"), 64)
+	items, err := s.store.ReevaluateSurveySubmissionQuality(r.Context(), projectID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "satisfaction.cleaning.reapply", "/api/v1/satisfaction/cleaning-rules/reapply", nil, map[string]interface{}{"projectId": projectID, "count": len(items)})
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) listSatisfactionIssues(w http.ResponseWriter, r *http.Request) {
@@ -1498,13 +2057,7 @@ func (s *Server) publicSurvey(w http.ResponseWriter, r *http.Request) {
 		statusError(w, err)
 		return
 	}
-	var template domain.FormLibraryItem
-	for _, item := range s.store.FormLibrary() {
-		if item.ID == share.FormTemplateID {
-			template = item
-			break
-		}
-	}
+	template := s.formTemplateForShare(share)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"share": share, "template": template, "requiresVerification": surveyRequiresVerification(share)})
 }
 
@@ -1514,16 +2067,27 @@ func (s *Server) verifyPublicSurveyPatient(w http.ResponseWriter, r *http.Reques
 		statusError(w, err)
 		return
 	}
+	if !s.allowPublicAction(r, "verify:"+share.ID, 12, time.Minute) {
+		http.Error(w, "too many verification attempts", http.StatusTooManyRequests)
+		return
+	}
 	if !surveyRequiresVerification(share) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"verified": true})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	var req struct {
 		Identifier string `json:"identifier"`
 		Phone      string `json:"phone"`
 		OpenID     string `json:"openId"`
 	}
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Identifier = sanitizePlainText(req.Identifier, 80)
+	req.Phone = sanitizeDialNumber(req.Phone)
+	if req.Identifier == "" || !validPhone(req.Phone) {
+		http.Error(w, "invalid patient identifier or phone", http.StatusBadRequest)
 		return
 	}
 	patient, visit, ok := s.findSurveyPatient(req.Identifier, req.Phone)
@@ -1563,6 +2127,11 @@ func (s *Server) createPublicSurveySubmission(w http.ResponseWriter, r *http.Req
 		statusError(w, err)
 		return
 	}
+	if !s.allowPublicAction(r, "submit:"+share.ID, 8, time.Minute) {
+		http.Error(w, "too many submissions", http.StatusTooManyRequests)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
 	var req struct {
 		PatientID       string                 `json:"patientId"`
 		VisitID         string                 `json:"visitId"`
@@ -1573,7 +2142,18 @@ func (s *Server) createPublicSurveySubmission(w http.ResponseWriter, r *http.Req
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	template := s.formTemplateByID(share.FormTemplateID)
+	template := s.formTemplateForShare(share)
+	answers, err := sanitizeSurveyAnswers(template.Components, req.Answers)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.PatientID = sanitizePlainText(req.PatientID, 64)
+	req.VisitID = sanitizePlainText(req.VisitID, 64)
+	if req.DurationSeconds < 0 || req.DurationSeconds > 24*60*60 {
+		http.Error(w, "invalid duration", http.StatusBadRequest)
+		return
+	}
 	submission, err := s.store.CreateSurveySubmission(r.Context(), domain.SurveySubmission{
 		ProjectID:       share.ProjectID,
 		ShareID:         share.ID,
@@ -1587,7 +2167,7 @@ func (s *Server) createPublicSurveySubmission(w http.ResponseWriter, r *http.Req
 		DurationSeconds: req.DurationSeconds,
 		IPAddress:       clientIP(r),
 		UserAgent:       r.UserAgent(),
-		Answers:         req.Answers,
+		Answers:         answers,
 	}, template.Components)
 	if err != nil {
 		statusError(w, err)
@@ -1602,7 +2182,8 @@ func (s *Server) publicSurveyEvents(w http.ResponseWriter, r *http.Request) {
 		statusError(w, err)
 		return
 	}
-	s.streamSurveyTemplate(w, share.FormTemplateID)
+	template := s.formTemplateForShare(share)
+	s.streamSurveyComponents(w, template.Components)
 }
 
 func (s *Server) formTemplateByID(id string) domain.FormLibraryItem {
@@ -1612,6 +2193,91 @@ func (s *Server) formTemplateByID(id string) domain.FormLibraryItem {
 		}
 	}
 	return domain.FormLibraryItem{}
+}
+
+func (s *Server) formTemplateForShare(share domain.SurveyShareLink) domain.FormLibraryItem {
+	formID := firstNonEmpty(configString(share.Config, "formId"), share.FormTemplateID)
+	if form, version, ok := s.resolveFormVersion(formID, configString(share.Config, "formVersionId")); ok {
+		return formVersionTemplate(form, version)
+	}
+	return s.formTemplateByID(share.FormTemplateID)
+}
+
+func (s *Server) resolveFormVersion(formID, versionID string) (domain.Form, domain.FormVersion, bool) {
+	formID = strings.TrimSpace(formID)
+	versionID = strings.TrimSpace(versionID)
+	if formID == "" {
+		return domain.Form{}, domain.FormVersion{}, false
+	}
+	for _, form := range s.store.Forms() {
+		if form.ID != formID {
+			continue
+		}
+		if versionID != "" {
+			for _, version := range form.Versions {
+				if version.ID == versionID {
+					return form, version, true
+				}
+			}
+			return domain.Form{}, domain.FormVersion{}, false
+		}
+		if form.CurrentVersionID != "" {
+			for _, version := range form.Versions {
+				if version.ID == form.CurrentVersionID {
+					return form, version, true
+				}
+			}
+		}
+		for _, version := range form.Versions {
+			if version.Published {
+				return form, version, true
+			}
+		}
+	}
+	return domain.Form{}, domain.FormVersion{}, false
+}
+
+func (s *Server) managedFormExists(formID string) bool {
+	formID = strings.TrimSpace(formID)
+	for _, form := range s.store.Forms() {
+		if form.ID == formID {
+			return true
+		}
+	}
+	return false
+}
+
+func formVersionTemplate(form domain.Form, version domain.FormVersion) domain.FormLibraryItem {
+	return domain.FormLibraryItem{
+		ID:         form.ID,
+		Kind:       "template",
+		Label:      form.Name,
+		Hint:       firstNonEmpty(form.Description, fmt.Sprintf("表单版本 v%d", version.Version)),
+		Components: formComponentsToMaps(version.Schema),
+		Enabled:    true,
+	}
+}
+
+func formComponentsToMaps(components []domain.FormComponent) []map[string]interface{} {
+	raw, err := json.Marshal(components)
+	if err != nil {
+		return nil
+	}
+	var result []map[string]interface{}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
+	}
+	return result
+}
+
+func configString(config map[string]interface{}, key string) string {
+	if config == nil {
+		return ""
+	}
+	if value, ok := config[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }
 
 func (s *Server) publicSurveyInterviewEvents(w http.ResponseWriter, r *http.Request) {
@@ -1626,6 +2292,538 @@ func surveyRequiresVerification(share domain.SurveyShareLink) bool {
 		return value
 	}
 	return share.Channel == "wechat" || share.Channel == "sms" || share.Channel == "qq"
+}
+
+func (s *Server) allowPublicAction(r *http.Request, scope string, limit int, window time.Duration) bool {
+	key := clientIP(r) + "|" + r.UserAgent() + "|" + scope
+	now := time.Now()
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	hits := s.publicHits[key]
+	kept := hits[:0]
+	for _, hit := range hits {
+		if now.Sub(hit) <= window {
+			kept = append(kept, hit)
+		}
+	}
+	if len(kept) >= limit {
+		s.publicHits[key] = kept
+		return false
+	}
+	s.publicHits[key] = append(kept, now)
+	return true
+}
+
+func sanitizeSurveyAnswers(components []map[string]interface{}, answers map[string]interface{}) (map[string]interface{}, error) {
+	if len(answers) > 200 {
+		return nil, fmt.Errorf("too many answers")
+	}
+	allowed := map[string]map[string]interface{}{}
+	for _, component := range components {
+		id, _ := component["id"].(string)
+		if id != "" {
+			allowed[id] = component
+		}
+	}
+	clean := map[string]interface{}{}
+	for key, value := range answers {
+		key = sanitizePlainText(key, 120)
+		component, ok := allowed[key]
+		if !ok {
+			return nil, fmt.Errorf("unknown field: %s", key)
+		}
+		next, err := sanitizeSurveyValue(component, value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		clean[key] = next
+	}
+	for id, component := range allowed {
+		required, _ := component["required"].(bool)
+		if required {
+			if value, ok := clean[id]; !ok || isEmptySurveyValue(value) {
+				return nil, fmt.Errorf("missing required field: %s", id)
+			}
+		}
+	}
+	return clean, nil
+}
+
+func sanitizeSurveyValue(component map[string]interface{}, value interface{}) (interface{}, error) {
+	kind, _ := component["type"].(string)
+	switch typed := value.(type) {
+	case string:
+		max := 2000
+		if kind == "text" || kind == "select" || kind == "radio" || kind == "date" {
+			max = 240
+		}
+		cleaned := sanitizePlainText(typed, max)
+		if kind == "radio" || kind == "select" || kind == "single_select" || kind == "likert" {
+			if !optionAllowed(component, cleaned) {
+				return nil, fmt.Errorf("invalid option")
+			}
+		}
+		return cleaned, nil
+	case float64:
+		if (kind == "rating" || kind == "number") && (typed < -1000000 || typed > 1000000) {
+			return nil, fmt.Errorf("number out of range")
+		}
+		return typed, nil
+	case bool, nil:
+		return typed, nil
+	case []interface{}:
+		if len(typed) > 50 {
+			return nil, fmt.Errorf("too many values")
+		}
+		items := []interface{}{}
+		for _, item := range typed {
+			cleaned, err := sanitizeSurveyValue(map[string]interface{}{"type": "text"}, item)
+			if err != nil {
+				return nil, err
+			}
+			if text, ok := cleaned.(string); ok && (kind == "checkbox" || kind == "multi_select") && !optionAllowed(component, text) {
+				return nil, fmt.Errorf("invalid option")
+			}
+			items = append(items, cleaned)
+		}
+		return items, nil
+	case map[string]interface{}:
+		if len(typed) > 80 {
+			return nil, fmt.Errorf("too many values")
+		}
+		result := map[string]interface{}{}
+		for key, item := range typed {
+			cleanKey := sanitizePlainText(key, 120)
+			cleaned, err := sanitizeSurveyValue(map[string]interface{}{"type": "text"}, item)
+			if err != nil {
+				return nil, err
+			}
+			result[cleanKey] = cleaned
+		}
+		return result, nil
+	default:
+		return sanitizePlainText(fmt.Sprint(typed), 500), nil
+	}
+}
+
+func optionAllowed(component map[string]interface{}, value string) bool {
+	rawOptions, ok := component["options"]
+	if !ok || rawOptions == nil {
+		return true
+	}
+	switch options := rawOptions.(type) {
+	case []interface{}:
+		for _, option := range options {
+			if surveyOptionMatches(option, value) {
+				return true
+			}
+		}
+	case []map[string]interface{}:
+		for _, option := range options {
+			if surveyOptionMatches(option, value) {
+				return true
+			}
+		}
+	case []string:
+		for _, option := range options {
+			if value == sanitizePlainText(option, 240) {
+				return true
+			}
+		}
+	default:
+		return true
+	}
+	return false
+}
+
+func surveyOptionMatches(option interface{}, value string) bool {
+	switch typed := option.(type) {
+	case map[string]interface{}:
+		label := sanitizePlainText(fmt.Sprint(typed["label"]), 240)
+		next := sanitizePlainText(fmt.Sprint(typed["value"]), 240)
+		return value == label || value == next
+	case string:
+		return value == sanitizePlainText(typed, 240)
+	default:
+		return value == sanitizePlainText(fmt.Sprint(typed), 240)
+	}
+}
+
+func isEmptySurveyValue(value interface{}) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []interface{}:
+		return len(typed) == 0
+	}
+	return false
+}
+
+func sanitizePlainText(value string, max int) string {
+	value = strings.TrimSpace(value)
+	value = strings.Map(func(r rune) rune {
+		if r < 32 && r != '\n' && r != '\r' && r != '\t' {
+			return -1
+		}
+		return r
+	}, value)
+	if max > 0 && len([]rune(value)) > max {
+		value = string([]rune(value)[:max])
+	}
+	return html.EscapeString(value)
+}
+
+func sanitizeDialNumber(value string) string {
+	return regexp.MustCompile(`[^0-9+]`).ReplaceAllString(strings.TrimSpace(value), "")
+}
+
+func validPhone(value string) bool {
+	return regexp.MustCompile(`^\+?[0-9]{6,20}$`).MatchString(value)
+}
+
+func sanitizeDeliveryRecipient(channel, value string) string {
+	value = strings.TrimSpace(value)
+	switch channel {
+	case "sms", "phone":
+		value = sanitizeDialNumber(value)
+		if !validPhone(value) {
+			return ""
+		}
+		return value
+	case "wechat", "wework", "mini_program", "qq":
+		return sanitizePlainText(value, 120)
+	default:
+		return sanitizePlainText(value, 180)
+	}
+}
+
+func patientRecipientForChannel(patient domain.Patient, channel string) (string, string) {
+	switch channel {
+	case "sms", "phone":
+		if recipient := sanitizeDeliveryRecipient(channel, patient.Phone); recipient != "" {
+			return recipient, "patient.phone"
+		}
+	case "wechat", "mini_program":
+		for _, key := range []string{"wechatOpenId", "wechatOpenID", "openid", "openId", "wechat.openid", "wechat.openId"} {
+			if recipient := sanitizeDeliveryRecipient(channel, sourceRefString(patient.SourceRefs, key)); recipient != "" {
+				return recipient, "patient.sourceRefs." + key
+			}
+		}
+	case "wework":
+		for _, key := range []string{"weworkUserId", "weworkUserID", "wework.userid", "wework.userId", "enterpriseWechatUserId"} {
+			if recipient := sanitizeDeliveryRecipient(channel, sourceRefString(patient.SourceRefs, key)); recipient != "" {
+				return recipient, "patient.sourceRefs." + key
+			}
+		}
+	case "qq":
+		for _, key := range []string{"qq", "qqOpenId", "qqOpenID", "qq.openid", "qq.openId"} {
+			if recipient := sanitizeDeliveryRecipient(channel, sourceRefString(patient.SourceRefs, key)); recipient != "" {
+				return recipient, "patient.sourceRefs." + key
+			}
+		}
+	}
+	return "", ""
+}
+
+func sourceRefString(refs map[string]interface{}, key string) string {
+	if len(refs) == 0 || key == "" {
+		return ""
+	}
+	parts := strings.Split(key, ".")
+	var current interface{} = refs
+	for _, part := range parts {
+		asMap, ok := current.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		current, ok = asMap[part]
+		if !ok {
+			return ""
+		}
+	}
+	return strings.TrimSpace(fmt.Sprint(current))
+}
+
+func recipientSourceLabel(channel string) string {
+	switch channel {
+	case "sms", "phone":
+		return "联系电话"
+	case "wechat", "mini_program":
+		return "微信 OpenID"
+	case "wework":
+		return "企业微信 UserID"
+	case "qq":
+		return "QQ 标识"
+	default:
+		return "收件人标识"
+	}
+}
+
+func (s *Server) dispatchSurveyChannelDelivery(ctx context.Context, item domain.SurveyChannelDelivery) (domain.SurveyChannelDelivery, error) {
+	item.Status = "sending"
+	item.Error = ""
+	item, _ = s.store.UpdateSurveyChannelDelivery(ctx, item)
+	switch item.Channel {
+	case "phone":
+		return s.dispatchPhoneDelivery(ctx, item)
+	case "sms", "wechat", "wework", "mini_program", "qq":
+		return s.dispatchIntegrationDelivery(ctx, item)
+	default:
+		item.Status = "sent"
+		item.ProviderRef = "local-link"
+		item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+}
+
+func (s *Server) dispatchPhoneDelivery(ctx context.Context, item domain.SurveyChannelDelivery) (domain.SurveyChannelDelivery, error) {
+	if !validPhone(item.Recipient) {
+		item.Status = "failed"
+		item.Error = "invalid phone number"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	call := s.store.CreateCall(domain.CallSession{
+		PatientID:     fmt.Sprint(item.Config["patientId"]),
+		PhoneNumber:   item.Recipient,
+		Status:        "dialing",
+		Direction:     "outbound",
+		InterviewForm: "survey_delivery:" + item.ID,
+	})
+	item.Config["callId"] = call.ID
+	if endpoint, ok := s.store.DefaultSipEndpoint(); ok {
+		result, err := s.sip.Dial(ctx, endpoint, call)
+		if errors.Is(err, sipgateway.ErrDisabled) {
+			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: "connected"})
+			item.Status = "sent"
+			item.ProviderRef = call.ID
+			item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+			return s.store.UpdateSurveyChannelDelivery(ctx, item)
+		}
+		if err != nil {
+			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: "failed"})
+			item.Status = "failed"
+			item.Error = err.Error()
+			item.ProviderRef = call.ID
+			return s.store.UpdateSurveyChannelDelivery(ctx, item)
+		}
+		call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: result.Status})
+		item.Status = "sent"
+		item.ProviderRef = call.ID
+		item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	item.Status = "failed"
+	item.Error = "phone interface is not configured"
+	item.ProviderRef = call.ID
+	return s.store.UpdateSurveyChannelDelivery(ctx, item)
+}
+
+func (s *Server) dispatchIntegrationDelivery(ctx context.Context, item domain.SurveyChannelDelivery) (domain.SurveyChannelDelivery, error) {
+	channels, err := s.store.IntegrationChannels(ctx)
+	if err != nil {
+		return item, err
+	}
+	var channel domain.IntegrationChannel
+	for _, candidate := range channels {
+		if candidate.Enabled && candidate.Kind == item.Channel {
+			channel = candidate
+			break
+		}
+	}
+	if channel.ID == "" {
+		item.Status = "failed"
+		item.Error = "channel interface is not enabled"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	if configBool(channel.Config, "mock") {
+		item.Status = "sent"
+		item.ProviderRef = "mock-" + item.ID
+		item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+		item.Config["provider"] = channel.Name
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	providerName := configString(channel.Config, "provider")
+	if providerName == "" {
+		providerName = item.Channel
+	}
+	switch providerName {
+	case "aliyun_sms":
+		return s.dispatchAliyunSMSDelivery(ctx, item, channel)
+	case "wechat_official", "wework", "wechat_mini_program", "mini_program":
+		return s.dispatchWechatDelivery(ctx, item, channel, providerName)
+	}
+	if strings.TrimSpace(channel.Endpoint) == "" || strings.Contains(channel.Endpoint, "example.local") || strings.Contains(channel.Endpoint, "example.com") {
+		item.Status = "failed"
+		item.Error = "channel endpoint is not configured"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	payload := map[string]interface{}{
+		"deliveryId": item.ID,
+		"projectId":  item.ProjectID,
+		"shareId":    item.ShareID,
+		"channel":    item.Channel,
+		"recipient":  item.Recipient,
+		"name":       item.RecipientName,
+		"message":    item.Message,
+		"url":        item.Config["url"],
+		"appId":      channel.AppID,
+	}
+	raw, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, channel.Endpoint, bytes.NewReader(raw))
+	if err != nil {
+		item.Status = "failed"
+		item.Error = err.Error()
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if channel.CredentialRef != "" {
+		req.Header.Set("X-Credential-Ref", channel.CredentialRef)
+	}
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		item.Status = "failed"
+		item.Error = err.Error()
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		item.Status = "failed"
+		item.Error = fmt.Sprintf("provider returned HTTP %d", resp.StatusCode)
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	var providerResp map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&providerResp)
+	item.Status = "sent"
+	item.ProviderRef = firstNonEmpty(fmt.Sprint(providerResp["id"]), fmt.Sprint(providerResp["messageId"]), fmt.Sprint(providerResp["providerRef"]), item.ID)
+	item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+	item.Config["provider"] = channel.Name
+	return s.store.UpdateSurveyChannelDelivery(ctx, item)
+}
+
+func (s *Server) dispatchAliyunSMSDelivery(ctx context.Context, item domain.SurveyChannelDelivery, channel domain.IntegrationChannel) (domain.SurveyChannelDelivery, error) {
+	if item.Config == nil {
+		item.Config = map[string]interface{}{}
+	}
+	if !validPhone(item.Recipient) {
+		item.Status = "failed"
+		item.Error = "invalid phone number"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	signName := configString(channel.Config, "signName")
+	templateCode := configString(channel.Config, "templateCode")
+	if signName == "" || templateCode == "" || strings.TrimSpace(channel.CredentialRef) == "" {
+		item.Status = "failed"
+		item.Error = "aliyun sms sdk is not fully configured: credentialRef, signName and templateCode are required"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	endpoint := strings.TrimSpace(channel.Endpoint)
+	if endpoint == "" {
+		endpoint = "https://dysmsapi.aliyuncs.com"
+	}
+	payload := map[string]interface{}{
+		"deliveryId":    item.ID,
+		"provider":      "aliyun_sms",
+		"sdk":           "aliyun-dysmsapi",
+		"action":        "SendSms",
+		"phoneNumbers":  item.Recipient,
+		"signName":      signName,
+		"templateCode":  templateCode,
+		"templateParam": map[string]interface{}{"name": item.RecipientName, "url": item.Config["url"], "message": item.Message},
+		"regionId":      firstNonEmpty(configString(channel.Config, "regionId"), "cn-hangzhou"),
+	}
+	return s.postIntegrationPayload(ctx, item, channel, endpoint, payload)
+}
+
+func (s *Server) dispatchWechatDelivery(ctx context.Context, item domain.SurveyChannelDelivery, channel domain.IntegrationChannel, provider string) (domain.SurveyChannelDelivery, error) {
+	if item.Config == nil {
+		item.Config = map[string]interface{}{}
+	}
+	templateID := configString(channel.Config, "templateId")
+	if templateID == "" || strings.TrimSpace(channel.CredentialRef) == "" || strings.TrimSpace(channel.AppID) == "" {
+		item.Status = "failed"
+		item.Error = "wechat interface is not fully configured: appId, credentialRef and templateId are required"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	endpoint := strings.TrimSpace(channel.Endpoint)
+	if endpoint == "" {
+		endpoint = "https://api.weixin.qq.com"
+	}
+	payload := map[string]interface{}{
+		"deliveryId": item.ID,
+		"provider":   provider,
+		"appId":      channel.AppID,
+		"templateId": templateID,
+		"recipient":  item.Recipient,
+		"name":       item.RecipientName,
+		"url":        item.Config["url"],
+		"pagePath":   configString(channel.Config, "pagePath"),
+		"message":    item.Message,
+	}
+	if provider == "wework" {
+		payload["agentId"] = configString(channel.Config, "agentId")
+	}
+	return s.postIntegrationPayload(ctx, item, channel, endpoint, payload)
+}
+
+func (s *Server) postIntegrationPayload(ctx context.Context, item domain.SurveyChannelDelivery, channel domain.IntegrationChannel, endpoint string, payload map[string]interface{}) (domain.SurveyChannelDelivery, error) {
+	if item.Config == nil {
+		item.Config = map[string]interface{}{}
+	}
+	if strings.TrimSpace(endpoint) == "" || strings.Contains(endpoint, "example.local") || strings.Contains(endpoint, "example.com") {
+		item.Status = "failed"
+		item.Error = "channel endpoint is not configured"
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	raw, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+	if err != nil {
+		item.Status = "failed"
+		item.Error = err.Error()
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if channel.CredentialRef != "" {
+		req.Header.Set("X-Credential-Ref", channel.CredentialRef)
+	}
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		item.Status = "failed"
+		item.Error = err.Error()
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		item.Status = "failed"
+		item.Error = fmt.Sprintf("provider returned HTTP %d", resp.StatusCode)
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
+	var providerResp map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&providerResp)
+	item.Status = "sent"
+	item.ProviderRef = firstNonEmpty(fmt.Sprint(providerResp["id"]), fmt.Sprint(providerResp["messageId"]), fmt.Sprint(providerResp["bizId"]), fmt.Sprint(providerResp["providerRef"]), item.ID)
+	item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+	item.Config["provider"] = channel.Name
+	item.Config["providerPayload"] = payload
+	return s.store.UpdateSurveyChannelDelivery(ctx, item)
+}
+
+func configBool(config map[string]interface{}, key string) bool {
+	value, ok := config[key]
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(typed, "true") || typed == "1"
+	default:
+		return false
+	}
 }
 
 func (s *Server) findSurveyPatient(identifier, phone string) (domain.Patient, domain.ClinicalVisit, bool) {
@@ -1763,6 +2961,91 @@ func addLowReasons(reasons map[string]int, item domain.SurveySubmission) {
 	}
 }
 
+func addTrendScore(buckets map[string]map[string]float64, item domain.SurveySubmission) {
+	score := numericAnswer(item.Answers["overall_satisfaction"])
+	if score == nil {
+		return
+	}
+	addBucket(buckets, item.SubmittedAt.Format("2006-01"), *score)
+}
+
+func addCrossAnalysis(buckets map[string]map[string]map[string]float64, item domain.SurveySubmission) {
+	score := numericAnswer(item.Answers["overall_satisfaction"])
+	if score == nil {
+		return
+	}
+	dimensions := map[string]string{
+		"科室":   firstNonEmpty(stringAnswer(item.Answers["department"]), "未填写科室"),
+		"性别":   firstNonEmpty(stringAnswer(item.Answers["patient_gender"]), stringAnswer(item.Answers["gender"]), "未填写性别"),
+		"就诊类型": firstNonEmpty(stringAnswer(item.Answers["visit_type"]), "未填写就诊类型"),
+		"渠道":   firstNonEmpty(item.Channel, "未知渠道"),
+	}
+	for dimension, value := range dimensions {
+		if buckets[dimension] == nil {
+			buckets[dimension] = map[string]map[string]float64{}
+		}
+		addBucket(buckets[dimension], value, *score)
+	}
+}
+
+func addDimensionRankings(buckets map[string]map[string]map[string]float64, item domain.SurveySubmission) {
+	score := numericAnswer(item.Answers["overall_satisfaction"])
+	if score == nil {
+		return
+	}
+	dimensions := map[string]string{
+		"科室":   firstNonEmpty(stringAnswer(item.Answers["department"]), "未填写科室"),
+		"医生":   firstNonEmpty(stringAnswer(item.Answers["doctor_name"]), stringAnswer(item.Answers["doctor"]), "未填写医生"),
+		"护士":   firstNonEmpty(stringAnswer(item.Answers["nurse_name"]), stringAnswer(item.Answers["nurse"]), "未填写护士"),
+		"病种":   firstNonEmpty(stringAnswer(item.Answers["diagnosis"]), stringAnswer(item.Answers["disease"]), "未填写病种"),
+		"就诊类型": firstNonEmpty(stringAnswer(item.Answers["visit_type"]), "未填写就诊类型"),
+		"渠道":   firstNonEmpty(item.Channel, "未知渠道"),
+		"性别":   firstNonEmpty(stringAnswer(item.Answers["patient_gender"]), stringAnswer(item.Answers["gender"]), "未填写性别"),
+		"年龄段":  ageBucket(numericAnswer(item.Answers["patient_age"])),
+	}
+	for dimension, value := range dimensions {
+		if buckets[dimension] == nil {
+			buckets[dimension] = map[string]map[string]float64{}
+		}
+		addBucket(buckets[dimension], value, *score)
+	}
+}
+
+func addJobAnalysis(buckets map[string]map[string]float64, item domain.SurveySubmission) {
+	score := numericAnswer(item.Answers["overall_satisfaction"])
+	if score == nil {
+		return
+	}
+	for _, value := range []string{
+		stringAnswer(item.Answers["doctor_name"]),
+		stringAnswer(item.Answers["nurse_name"]),
+		stringAnswer(item.Answers["window_name"]),
+		stringAnswer(item.Answers["operator_name"]),
+	} {
+		if value != "" {
+			addBucket(buckets, value, *score)
+		}
+	}
+}
+
+func addImportanceMatrix(buckets map[string]map[string]float64, item domain.SurveySubmission) {
+	labels := map[string]string{"overall_satisfaction": "总体满意度", "recommend_score": "推荐意愿", "service_matrix": "分项满意度"}
+	for key, label := range labels {
+		score := numericAnswer(item.Answers[key])
+		if score == nil {
+			continue
+		}
+		if buckets[label] == nil {
+			buckets[label] = map[string]float64{"sum": 0, "count": 0, "low": 0}
+		}
+		buckets[label]["sum"] += *score
+		buckets[label]["count"]++
+		if *score <= 3 {
+			buckets[label]["low"]++
+		}
+	}
+}
+
 func addBucket(buckets map[string]map[string]float64, key string, score float64) {
 	if buckets[key] == nil {
 		buckets[key] = map[string]float64{"sum": 0, "count": 0}
@@ -1780,6 +3063,373 @@ func averageBuckets(buckets map[string]map[string]float64) []map[string]interfac
 		items = append(items, map[string]interface{}{"name": key, "score": item["sum"] / item["count"], "count": int(item["count"])})
 	}
 	return items
+}
+
+func averageNestedBuckets(buckets map[string]map[string]map[string]float64) map[string][]map[string]interface{} {
+	result := map[string][]map[string]interface{}{}
+	for dimension, items := range buckets {
+		result[dimension] = averageBuckets(items)
+	}
+	return result
+}
+
+func periodCompareBuckets(items []map[string]interface{}) []map[string]interface{} {
+	sort.Slice(items, func(i, j int) bool { return fmt.Sprint(items[i]["name"]) < fmt.Sprint(items[j]["name"]) })
+	result := []map[string]interface{}{}
+	byPeriod := map[string]map[string]interface{}{}
+	for _, item := range items {
+		period := fmt.Sprint(item["name"])
+		byPeriod[period] = item
+		score, _ := item["score"].(float64)
+		row := map[string]interface{}{"name": period, "score": score, "count": item["count"], "mom": nil, "yoy": nil}
+		if prev, ok := previousPeriod(period, -1); ok {
+			if prevItem, exists := byPeriod[prev]; exists {
+				row["mom"] = percentChange(score, valueFloat(prevItem["score"]))
+			}
+		}
+		if prev, ok := previousPeriod(period, -12); ok {
+			if prevItem, exists := byPeriod[prev]; exists {
+				row["yoy"] = percentChange(score, valueFloat(prevItem["score"]))
+			}
+		}
+		result = append(result, row)
+	}
+	return result
+}
+
+func shortBoardItems(stats map[string]interface{}) []map[string]interface{} {
+	result := []map[string]interface{}{}
+	if dimensions, ok := stats["dimensionRankings"].(map[string][]map[string]interface{}); ok {
+		for dimension, rows := range dimensions {
+			if len(rows) == 0 {
+				continue
+			}
+			sort.Slice(rows, func(i, j int) bool { return valueFloat(rows[i]["score"]) < valueFloat(rows[j]["score"]) })
+			row := rows[0]
+			result = append(result, map[string]interface{}{"dimension": dimension, "name": row["name"], "score": row["score"], "count": row["count"], "reason": "维度最低分"})
+		}
+	}
+	if reasons, ok := stats["lowReasons"].(map[string]int); ok {
+		for name, count := range reasons {
+			result = append(result, map[string]interface{}{"dimension": "低分原因", "name": name, "score": 0, "count": count, "reason": "负面原因高频"})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if valueFloat(result[i]["score"]) == 0 || valueFloat(result[j]["score"]) == 0 {
+			return valueFloat(result[i]["count"]) > valueFloat(result[j]["count"])
+		}
+		return valueFloat(result[i]["score"]) < valueFloat(result[j]["score"])
+	})
+	if len(result) > 10 {
+		return result[:10]
+	}
+	return result
+}
+
+func varianceAnalysis(dimensions map[string][]map[string]interface{}) []map[string]interface{} {
+	result := []map[string]interface{}{}
+	for dimension, rows := range dimensions {
+		if len(rows) < 2 {
+			continue
+		}
+		var sum float64
+		minScore := math.MaxFloat64
+		maxScore := -math.MaxFloat64
+		minName := ""
+		maxName := ""
+		for _, row := range rows {
+			score := valueFloat(row["score"])
+			sum += score
+			if score < minScore {
+				minScore, minName = score, fmt.Sprint(row["name"])
+			}
+			if score > maxScore {
+				maxScore, maxName = score, fmt.Sprint(row["name"])
+			}
+		}
+		mean := sum / float64(len(rows))
+		var variance float64
+		for _, row := range rows {
+			diff := valueFloat(row["score"]) - mean
+			variance += diff * diff
+		}
+		variance = variance / float64(len(rows))
+		result = append(result, map[string]interface{}{"dimension": dimension, "variance": variance, "stddev": math.Sqrt(variance), "minName": minName, "minScore": minScore, "maxName": maxName, "maxScore": maxScore, "gap": maxScore - minScore})
+	}
+	sort.Slice(result, func(i, j int) bool { return valueFloat(result[i]["gap"]) > valueFloat(result[j]["gap"]) })
+	return result
+}
+
+func correlationAnalysis(items []domain.SurveySubmission) []map[string]interface{} {
+	keys := map[string]string{"recommend_score": "推荐意愿", "service_matrix": "分项满意度", "wait_time_score": "候诊时间", "doctor_service": "医生服务", "nurse_service": "护理服务"}
+	result := []map[string]interface{}{}
+	for key, label := range keys {
+		xs := []float64{}
+		ys := []float64{}
+		for _, item := range items {
+			if item.QualityStatus == "invalid" {
+				continue
+			}
+			x := numericAnswer(item.Answers[key])
+			y := numericAnswer(item.Answers["overall_satisfaction"])
+			if x != nil && y != nil {
+				xs = append(xs, *x)
+				ys = append(ys, *y)
+			}
+		}
+		if len(xs) >= 2 {
+			result = append(result, map[string]interface{}{"name": label, "coefficient": pearson(xs, ys), "count": len(xs)})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return math.Abs(valueFloat(result[i]["coefficient"])) > math.Abs(valueFloat(result[j]["coefficient"]))
+	})
+	return result
+}
+
+func pearson(xs, ys []float64) float64 {
+	if len(xs) != len(ys) || len(xs) == 0 {
+		return 0
+	}
+	var sumX, sumY float64
+	for i := range xs {
+		sumX += xs[i]
+		sumY += ys[i]
+	}
+	meanX := sumX / float64(len(xs))
+	meanY := sumY / float64(len(ys))
+	var numerator, denomX, denomY float64
+	for i := range xs {
+		dx := xs[i] - meanX
+		dy := ys[i] - meanY
+		numerator += dx * dy
+		denomX += dx * dx
+		denomY += dy * dy
+	}
+	if denomX == 0 || denomY == 0 {
+		return 0
+	}
+	return numerator / math.Sqrt(denomX*denomY)
+}
+
+func previousPeriod(period string, monthDelta int) (string, bool) {
+	parsed, err := time.Parse("2006-01", period)
+	if err != nil {
+		return "", false
+	}
+	return parsed.AddDate(0, monthDelta, 0).Format("2006-01"), true
+}
+
+func percentChange(current, previous float64) interface{} {
+	if previous == 0 {
+		return nil
+	}
+	return (current - previous) / previous
+}
+
+func valueFloat(value interface{}) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	case string:
+		parsed, _ := strconv.ParseFloat(typed, 64)
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func ageBucket(score *float64) string {
+	if score == nil || *score <= 0 {
+		return "未填写年龄"
+	}
+	age := *score
+	switch {
+	case age < 18:
+		return "18岁以下"
+	case age < 35:
+		return "18-34岁"
+	case age < 60:
+		return "35-59岁"
+	default:
+		return "60岁及以上"
+	}
+}
+
+func importanceBuckets(buckets map[string]map[string]float64) []map[string]interface{} {
+	items := []map[string]interface{}{}
+	for key, item := range buckets {
+		if item["count"] == 0 {
+			continue
+		}
+		score := item["sum"] / item["count"]
+		impact := item["low"] / item["count"]
+		items = append(items, map[string]interface{}{"name": key, "score": score, "impact": impact, "count": int(item["count"])})
+	}
+	return items
+}
+
+func satisfactionInsights(stats map[string]interface{}) []string {
+	insights := []string{}
+	if avg, ok := stats["scoreAverage"].(float64); ok && avg > 0 {
+		if avg < 3.5 {
+			insights = append(insights, "总体满意度偏低，建议优先排查候诊、沟通和缴费等高频触点。")
+		} else {
+			insights = append(insights, "总体满意度处于可接受区间，可继续关注低分科室和负面开放意见。")
+		}
+	}
+	if reasons, ok := stats["lowReasons"].(map[string]int); ok {
+		topName := ""
+		topCount := 0
+		for name, count := range reasons {
+			if count > topCount {
+				topName, topCount = name, count
+			}
+		}
+		if topName != "" {
+			insights = append(insights, fmt.Sprintf("低分原因最集中在“%s”，共出现 %d 次，可作为整改优先主题。", topName, topCount))
+		}
+	}
+	if len(insights) == 0 {
+		insights = append(insights, "当前样本量或有效得分不足，建议先扩大采集范围并完成数据清洗。")
+	}
+	return insights
+}
+
+func buildReportInsights(result map[string]interface{}) map[string]interface{} {
+	rows, _ := result["rows"].([]map[string]interface{})
+	if rows == nil {
+		if rawRows, ok := result["rows"].([]interface{}); ok {
+			for _, raw := range rawRows {
+				if row, ok := raw.(map[string]interface{}); ok {
+					rows = append(rows, row)
+				}
+			}
+		}
+	}
+	lowDimension := ""
+	lowScore := 999.0
+	topDimension := ""
+	topCount := 0
+	for _, row := range rows {
+		name := firstNonEmpty(fmt.Sprint(row["dimensionValue"]), fmt.Sprint(row["indicator"]))
+		score := numberFromAny(row["score"])
+		count := int(numberFromAny(row["sampleCount"]))
+		if score > 0 && score < lowScore {
+			lowScore = score
+			lowDimension = name
+		}
+		if count > topCount {
+			topCount = count
+			topDimension = name
+		}
+	}
+	insights := []string{"样本量与指标得分已完成基础聚合，可用于生成月度/季度分析报告。"}
+	if lowDimension != "" {
+		insights = append(insights, fmt.Sprintf("当前最低得分维度为“%s”，得分 %.1f，建议优先进入问题台账跟踪。", lowDimension, lowScore))
+	}
+	if topDimension != "" {
+		insights = append(insights, fmt.Sprintf("样本最多的维度为“%s”，共 %d 条，可作为趋势判断的主要观察对象。", topDimension, topCount))
+	}
+	return map[string]interface{}{"sentiment": "neutral", "themes": []string{"服务体验", "流程效率", "沟通质量"}, "rootCauses": insights, "suggestions": []string{"对低分指标建立整改责任人和复评周期", "按科室和医生维度持续观察趋势变化", "将开放意见接入主题聚类和典型语句提取"}}
+}
+
+func renderReportDocument(report domain.Report, result map[string]interface{}) string {
+	rows, _ := result["rows"].([]map[string]interface{})
+	var b strings.Builder
+	b.WriteString("<html><head><meta charset=\"utf-8\"><style>body{font-family:Arial,'Microsoft YaHei',sans-serif}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px}</style></head><body>")
+	b.WriteString("<h1>" + html.EscapeString(report.Name) + "</h1>")
+	b.WriteString("<p>" + html.EscapeString(report.Description) + "</p>")
+	b.WriteString("<h2>AI 洞察摘要</h2><ul>")
+	for _, insight := range buildReportInsights(result)["rootCauses"].([]string) {
+		b.WriteString("<li>" + html.EscapeString(insight) + "</li>")
+	}
+	b.WriteString("</ul><h2>数据明细</h2><table>")
+	if len(rows) > 0 {
+		b.WriteString("<tr>")
+		for key := range rows[0] {
+			b.WriteString("<th>" + html.EscapeString(key) + "</th>")
+		}
+		b.WriteString("</tr>")
+		for _, row := range rows {
+			b.WriteString("<tr>")
+			for key := range rows[0] {
+				b.WriteString("<td>" + html.EscapeString(fmt.Sprint(row[key])) + "</td>")
+			}
+			b.WriteString("</tr>")
+		}
+	}
+	b.WriteString("</table></body></html>")
+	return b.String()
+}
+
+func stripTags(value string) string {
+	clean := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(value, "\n")
+	return html.UnescapeString(clean)
+}
+
+func simplePDFBytes(text string) []byte {
+	text = strings.ReplaceAll(text, "\\", "\\\\")
+	text = strings.ReplaceAll(text, "(", "\\(")
+	text = strings.ReplaceAll(text, ")", "\\)")
+	lines := strings.Split(text, "\n")
+	if len(lines) > 28 {
+		lines = lines[:28]
+	}
+	content := "BT /F1 12 Tf 50 780 Td "
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if len([]rune(line)) > 80 {
+			line = string([]rune(line)[:80])
+		}
+		content += "(" + line + ") Tj 0 -18 Td "
+	}
+	content += "ET"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content),
+	}
+	var b strings.Builder
+	b.WriteString("%PDF-1.4\n")
+	offsets := []int{0}
+	for index, object := range objects {
+		offsets = append(offsets, b.Len())
+		b.WriteString(fmt.Sprintf("%d 0 obj\n%s\nendobj\n", index+1, object))
+	}
+	xref := b.Len()
+	b.WriteString(fmt.Sprintf("xref\n0 %d\n0000000000 65535 f \n", len(objects)+1))
+	for _, offset := range offsets[1:] {
+		b.WriteString(fmt.Sprintf("%010d 00000 n \n", offset))
+	}
+	b.WriteString(fmt.Sprintf("trailer << /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF", len(objects)+1, xref))
+	return []byte(b.String())
+}
+
+func numberFromAny(value interface{}) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case json.Number:
+		next, _ := typed.Float64()
+		return next
+	case string:
+		next, _ := strconv.ParseFloat(typed, 64)
+		return next
+	default:
+		return 0
+	}
 }
 
 func stringAnswer(value interface{}) string {
@@ -1808,6 +3458,17 @@ func dateOnlyString(value string) string {
 }
 
 func (s *Server) streamSurveyTemplate(w http.ResponseWriter, formTemplateID string) {
+	components := []map[string]interface{}{}
+	for _, item := range s.store.FormLibrary() {
+		if item.Kind == "template" && (formTemplateID == "" || item.ID == formTemplateID) {
+			components = item.Components
+			break
+		}
+	}
+	s.streamSurveyComponents(w, components)
+}
+
+func (s *Server) streamSurveyComponents(w http.ResponseWriter, components []map[string]interface{}) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1815,13 +3476,6 @@ func (s *Server) streamSurveyTemplate(w http.ResponseWriter, formTemplateID stri
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
-	}
-	components := []map[string]interface{}{}
-	for _, item := range s.store.FormLibrary() {
-		if item.Kind == "template" && (formTemplateID == "" || item.ID == formTemplateID) {
-			components = item.Components
-			break
-		}
 	}
 	for _, component := range components {
 		raw, _ := json.Marshal(component)
@@ -1887,12 +3541,51 @@ func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) queryReport(w http.ResponseWriter, r *http.Request) {
-	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"))
+	var req struct {
+		ProjectID string `json:"projectId"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"), req.ProjectID)
 	if err != nil {
 		statusError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) reportInsights(w http.ResponseWriter, r *http.Request) {
+	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, buildReportInsights(result))
+}
+
+func (s *Server) exportReport(w http.ResponseWriter, r *http.Request) {
+	report, err := s.store.ReportDefinition(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	result, err := s.store.QueryReportData(r.Context(), report.ID, r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	format := strings.ToLower(firstNonEmpty(r.URL.Query().Get("format"), "word"))
+	body := renderReportDocument(report, result)
+	if format == "pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="report.pdf"`)
+		_, _ = w.Write(simplePDFBytes(stripTags(body)))
+		return
+	}
+	w.Header().Set("Content-Type", "application/msword; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="report.doc"`)
+	_, _ = w.Write([]byte(body))
 }
 
 func (s *Server) addReportWidget(w http.ResponseWriter, r *http.Request) {
@@ -2330,6 +4023,11 @@ func (s *Server) listCalls(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createCall(w http.ResponseWriter, r *http.Request) {
 	var call domain.CallSession
 	if !decodeJSON(w, r, &call) {
+		return
+	}
+	call.PhoneNumber = sanitizeDialNumber(call.PhoneNumber)
+	if !validPhone(call.PhoneNumber) {
+		http.Error(w, "invalid phone number", http.StatusBadRequest)
 		return
 	}
 	call = s.store.CreateCall(call)

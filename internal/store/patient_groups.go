@@ -12,7 +12,7 @@ import (
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) groupDB(ctx context.Context) (*sql.DB, error) {
+func (s *Store) groupDB(ctx context.Context) (*sql.DB, error) {
 	s.mu.RLock()
 	driver, dsn := s.dbDriver, s.dbDSN
 	s.mu.RUnlock()
@@ -33,7 +33,7 @@ func (s *MemoryStore) groupDB(ctx context.Context) (*sql.DB, error) {
 	return db, nil
 }
 
-func (s *MemoryStore) EnsurePatientGroupTables(ctx context.Context) error {
+func (s *Store) EnsurePatientGroupTables(ctx context.Context) error {
 	db, err := s.groupDB(ctx)
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func (s *MemoryStore) EnsurePatientGroupTables(ctx context.Context) error {
 	return nil
 }
 
-func (s *MemoryStore) PatientTags(ctx context.Context) ([]domain.PatientTag, error) {
+func (s *Store) PatientTags(ctx context.Context) ([]domain.PatientTag, error) {
 	db, err := s.groupDB(ctx)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (s *MemoryStore) PatientTags(ctx context.Context) ([]domain.PatientTag, err
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertPatientTag(ctx context.Context, item domain.PatientTag) (domain.PatientTag, error) {
+func (s *Store) UpsertPatientTag(ctx context.Context, item domain.PatientTag) (domain.PatientTag, error) {
 	db, err := s.groupDB(ctx)
 	if err != nil {
 		return domain.PatientTag{}, err
@@ -138,7 +138,7 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), color = VALUES(color), description 
 	return item, nil
 }
 
-func (s *MemoryStore) PatientGroups(ctx context.Context) ([]domain.PatientGroup, error) {
+func (s *Store) PatientGroups(ctx context.Context) ([]domain.PatientGroup, error) {
 	db, err := s.groupDB(ctx)
 	if err != nil {
 		return nil, err
@@ -173,7 +173,7 @@ ORDER BY g.updated_at DESC`)
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) UpsertPatientGroup(ctx context.Context, item domain.PatientGroup) (domain.PatientGroup, error) {
+func (s *Store) UpsertPatientGroup(ctx context.Context, item domain.PatientGroup) (domain.PatientGroup, error) {
 	db, err := s.groupDB(ctx)
 	if err != nil {
 		return domain.PatientGroup{}, err
@@ -215,7 +215,7 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), mode =
 	return item, nil
 }
 
-func (s *MemoryStore) AssignPatientGroupMembers(ctx context.Context, groupID string, patientIDs []string, actorID string) error {
+func (s *Store) AssignPatientGroupMembers(ctx context.Context, groupID string, patientIDs []string, actorID string) error {
 	db, err := s.groupDB(ctx)
 	if err != nil {
 		return err

@@ -12,7 +12,7 @@ import (
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) Departments() []domain.Department {
+func (s *Store) Departments() []domain.Department {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Department, 0, len(s.departments))
@@ -22,7 +22,7 @@ func (s *MemoryStore) Departments() []domain.Department {
 	return items
 }
 
-func (s *MemoryStore) Dictionaries() []domain.Dictionary {
+func (s *Store) Dictionaries() []domain.Dictionary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.Dictionary, 0, len(s.dictionaries))
@@ -32,7 +32,7 @@ func (s *MemoryStore) Dictionaries() []domain.Dictionary {
 	return items
 }
 
-func (s *MemoryStore) CreateDictionary(item domain.Dictionary) domain.Dictionary {
+func (s *Store) CreateDictionary(item domain.Dictionary) domain.Dictionary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -45,7 +45,7 @@ func (s *MemoryStore) CreateDictionary(item domain.Dictionary) domain.Dictionary
 	return item
 }
 
-func (s *MemoryStore) UpdateDictionary(id string, patch domain.Dictionary) (domain.Dictionary, error) {
+func (s *Store) UpdateDictionary(id string, patch domain.Dictionary) (domain.Dictionary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item, ok := s.dictionaries[id]
@@ -64,7 +64,7 @@ func (s *MemoryStore) UpdateDictionary(id string, patch domain.Dictionary) (doma
 	return item, nil
 }
 
-func (s *MemoryStore) LoadFollowupConfigFromSQL(ctx context.Context, driver, dsn string) error {
+func (s *Store) LoadFollowupConfigFromSQL(ctx context.Context, driver, dsn string) error {
 	if strings.TrimSpace(dsn) == "" {
 		return nil
 	}
@@ -424,7 +424,7 @@ ORDER BY due_at IS NULL, due_at, updated_at DESC`)
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) FormLibraryItem(id string) (domain.FormLibraryItem, bool) {
+func (s *Store) FormLibraryItem(id string) (domain.FormLibraryItem, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, item := range s.formLibrary {
@@ -435,7 +435,7 @@ func (s *MemoryStore) FormLibraryItem(id string) (domain.FormLibraryItem, bool) 
 	return domain.FormLibraryItem{}, false
 }
 
-func (s *MemoryStore) UpsertFormLibraryItem(item domain.FormLibraryItem) domain.FormLibraryItem {
+func (s *Store) UpsertFormLibraryItem(item domain.FormLibraryItem) domain.FormLibraryItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if item.ID == "" {
@@ -454,7 +454,7 @@ func (s *MemoryStore) UpsertFormLibraryItem(item domain.FormLibraryItem) domain.
 	return item
 }
 
-func (s *MemoryStore) DeleteFormLibraryItem(id string) (domain.FormLibraryItem, error) {
+func (s *Store) DeleteFormLibraryItem(id string) (domain.FormLibraryItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index, item := range s.formLibrary {
@@ -466,7 +466,7 @@ func (s *MemoryStore) DeleteFormLibraryItem(id string) (domain.FormLibraryItem, 
 	return domain.FormLibraryItem{}, ErrNotFound
 }
 
-func (s *MemoryStore) FollowupPlans() []domain.FollowupPlan {
+func (s *Store) FollowupPlans() []domain.FollowupPlan {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.FollowupPlan, 0, len(s.followPlans))
@@ -476,14 +476,14 @@ func (s *MemoryStore) FollowupPlans() []domain.FollowupPlan {
 	return items
 }
 
-func (s *MemoryStore) FollowupPlanByID(id string) (domain.FollowupPlan, bool) {
+func (s *Store) FollowupPlanByID(id string) (domain.FollowupPlan, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	item, ok := s.followPlans[id]
 	return item, ok
 }
 
-func (s *MemoryStore) CreateFollowupPlan(plan domain.FollowupPlan) domain.FollowupPlan {
+func (s *Store) CreateFollowupPlan(plan domain.FollowupPlan) domain.FollowupPlan {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -499,7 +499,7 @@ func (s *MemoryStore) CreateFollowupPlan(plan domain.FollowupPlan) domain.Follow
 	return plan
 }
 
-func (s *MemoryStore) UpdateFollowupPlan(id string, patch domain.FollowupPlan) (domain.FollowupPlan, error) {
+func (s *Store) UpdateFollowupPlan(id string, patch domain.FollowupPlan) (domain.FollowupPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	plan, ok := s.followPlans[id]
@@ -524,7 +524,7 @@ func (s *MemoryStore) UpdateFollowupPlan(id string, patch domain.FollowupPlan) (
 	return plan, nil
 }
 
-func (s *MemoryStore) FollowupTasks(status, assigneeID string) []domain.FollowupTask {
+func (s *Store) FollowupTasks(status, assigneeID string) []domain.FollowupTask {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]domain.FollowupTask, 0, len(s.followTasks))
@@ -540,7 +540,7 @@ func (s *MemoryStore) FollowupTasks(status, assigneeID string) []domain.Followup
 	return items
 }
 
-func (s *MemoryStore) CreateFollowupTask(task domain.FollowupTask) domain.FollowupTask {
+func (s *Store) CreateFollowupTask(task domain.FollowupTask) domain.FollowupTask {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -566,7 +566,7 @@ func (s *MemoryStore) CreateFollowupTask(task domain.FollowupTask) domain.Follow
 	return task
 }
 
-func (s *MemoryStore) UpdateFollowupTask(id string, patch domain.FollowupTask) (domain.FollowupTask, error) {
+func (s *Store) UpdateFollowupTask(id string, patch domain.FollowupTask) (domain.FollowupTask, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	task, ok := s.followTasks[id]
@@ -598,7 +598,7 @@ func (s *MemoryStore) UpdateFollowupTask(id string, patch domain.FollowupTask) (
 	return task, nil
 }
 
-func (s *MemoryStore) GenerateFollowupTasks(planID string) ([]domain.FollowupTask, error) {
+func (s *Store) GenerateFollowupTasks(planID string) ([]domain.FollowupTask, error) {
 	s.mu.RLock()
 	plan, ok := s.followPlans[planID]
 	if !ok {
@@ -637,7 +637,7 @@ func (s *MemoryStore) GenerateFollowupTasks(planID string) ([]domain.FollowupTas
 	return tasks, nil
 }
 
-func (s *MemoryStore) followupAssigneesLocked(role string) []domain.User {
+func (s *Store) followupAssigneesLocked(role string) []domain.User {
 	counts := map[string]int{}
 	for _, task := range s.followTasks {
 		if task.AssigneeID != "" && task.Status != "completed" && task.Status != "failed" {

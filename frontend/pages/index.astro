@@ -1,6 +1,7 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro"
 import PageHeader from "../components/PageHeader.astro"
+import { ScheduleOverview } from "../islands/ScheduleManager"
 
 const stats = [
   { label: "患者总数", value: "1,234", hint: "较上月增长 12%" },
@@ -27,16 +28,9 @@ const stats = [
       <div class="mt-4 grid gap-3">
         <a class="rounded-md border border-line px-4 py-3 hover:border-primary" href="/design">创建采集表单</a>
         <a class="rounded-md border border-line px-4 py-3 hover:border-primary" href="/sources">配置外部数据源</a>
-        <a class="rounded-md border border-line px-4 py-3 hover:border-primary" href="/reports">设计分析报表</a>
+        <a class="rounded-md border border-line px-4 py-3 hover:border-primary" href="/data-center/reports">设计分析报表</a>
       </div>
     </article>
-    <article class="rounded-lg border border-line bg-surface p-5">
-      <h2 class="text-base font-semibold">平台能力</h2>
-      <div class="mt-4 grid gap-3 text-sm text-muted">
-        <p>Go API 提供认证、RBAC、审计日志、表单定义、提交结果、数据源绑定和报表接口。</p>
-        <p>Astro 页面负责稳定路由和布局，复杂设计器、表格、图表用 React islands 承载。</p>
-        <p>VTable/VChart 已作为表格与报表渲染引擎接入。</p>
-      </div>
-    </article>
+    <ScheduleOverview client:load />
   </section>
 </AppLayout>

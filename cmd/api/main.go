@@ -17,35 +17,18 @@ import (
 func main() {
 	cfg := config.Load()
 	log := logger.New(cfg.Environment, cfg.Log.Level)
-	appStore := store.NewMemoryStore()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	var appStore *store.Store
 	if cfg.Database.DSN != "" {
-		appStore.ConfigureSQL(cfg.Database.Driver, cfg.Database.DSN)
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		if err := appStore.LoadIdentityFromSQL(ctx, cfg.Database.Driver, cfg.Database.DSN); err != nil {
-			log.Warn().Err(err).Msg("database identity load skipped; using in-memory users")
+		var err error
+		appStore, err = store.Open(ctx, cfg.Database.Driver, cfg.Database.DSN)
+		if err != nil {
+			log.Fatal().Err(err).Msg("database store init failed")
 		}
-		if err := appStore.LoadFormLibraryFromSQL(ctx, cfg.Database.Driver, cfg.Database.DSN); err != nil {
-			log.Warn().Err(err).Msg("database form library load skipped; using built-in form library")
-		}
-		if err := appStore.LoadFollowupConfigFromSQL(ctx, cfg.Database.Driver, cfg.Database.DSN); err != nil {
-			log.Warn().Err(err).Msg("database followup config load skipped; using built-in followup config")
-		}
-		if err := appStore.EnsureEvaluationComplaintTables(ctx); err != nil {
-			log.Warn().Err(err).Msg("database evaluation complaint tables ensure skipped")
-		}
-		if err := appStore.EnsurePatientGroupTables(ctx); err != nil {
-			log.Warn().Err(err).Msg("database patient group tables ensure skipped")
-		}
-		if err := appStore.EnsureSurveyChannelTables(ctx); err != nil {
-			log.Warn().Err(err).Msg("database survey channel tables ensure skipped")
-		}
-		if err := appStore.EnsureClinicalFactTables(ctx); err != nil {
-			log.Warn().Err(err).Msg("database clinical fact tables ensure skipped")
-		}
-		if err := appStore.EnsureReportTables(ctx); err != nil {
-			log.Warn().Err(err).Msg("database report tables ensure skipped")
-		}
-		cancel()
+	} else {
+		appStore = store.InstallOnly()
+		log.Warn().Msg("database dsn is empty; only installation endpoints are available")
 	}
 
 	srv := &http.Server{
@@ -73,9 +56,9 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("server shutdown failed")
 	}
 }

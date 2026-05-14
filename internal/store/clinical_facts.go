@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 
+	"github.com/google/uuid"
+
 	"reporter/internal/domain"
 )
 
-func (s *MemoryStore) EnsureClinicalFactTables(ctx context.Context) error {
+func (s *Store) EnsureClinicalFactTables(ctx context.Context) error {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return err
@@ -256,7 +258,7 @@ func seedClinicalFacts(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func (s *MemoryStore) Patient360(ctx context.Context, patientID string) (domain.Patient360, error) {
+func (s *Store) Patient360(ctx context.Context, patientID string) (domain.Patient360, error) {
 	patient, ok := s.Patient(patientID)
 	if !ok {
 		return domain.Patient360{}, ErrNotFound
@@ -308,7 +310,7 @@ func (s *MemoryStore) Patient360(ctx context.Context, patientID string) (domain.
 	}, nil
 }
 
-func (s *MemoryStore) PatientDiagnoses(ctx context.Context, patientID string) ([]domain.PatientDiagnosis, error) {
+func (s *Store) PatientDiagnoses(ctx context.Context, patientID string) ([]domain.PatientDiagnosis, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.PatientDiagnosis{}, nil
@@ -330,7 +332,7 @@ func (s *MemoryStore) PatientDiagnoses(ctx context.Context, patientID string) ([
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) PatientHistories(ctx context.Context, patientID string) ([]domain.PatientHistory, error) {
+func (s *Store) PatientHistories(ctx context.Context, patientID string) ([]domain.PatientHistory, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.PatientHistory{}, nil
@@ -352,7 +354,7 @@ func (s *MemoryStore) PatientHistories(ctx context.Context, patientID string) ([
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) MedicationOrders(ctx context.Context, patientID string) ([]domain.MedicationOrder, error) {
+func (s *Store) MedicationOrders(ctx context.Context, patientID string) ([]domain.MedicationOrder, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.MedicationOrder{}, nil
@@ -374,7 +376,7 @@ func (s *MemoryStore) MedicationOrders(ctx context.Context, patientID string) ([
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) LabReports(ctx context.Context, patientID string) ([]domain.LabReport, error) {
+func (s *Store) LabReports(ctx context.Context, patientID string) ([]domain.LabReport, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.LabReport{}, nil
@@ -418,7 +420,7 @@ func labResults(ctx context.Context, db *sql.DB, reportID string) ([]domain.LabR
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) ExamReports(ctx context.Context, patientID string) ([]domain.ExamReport, error) {
+func (s *Store) ExamReports(ctx context.Context, patientID string) ([]domain.ExamReport, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.ExamReport{}, nil
@@ -440,7 +442,7 @@ func (s *MemoryStore) ExamReports(ctx context.Context, patientID string) ([]doma
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) SurgeryRecords(ctx context.Context, patientID string) ([]domain.SurgeryRecord, error) {
+func (s *Store) SurgeryRecords(ctx context.Context, patientID string) ([]domain.SurgeryRecord, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.SurgeryRecord{}, nil
@@ -462,7 +464,7 @@ func (s *MemoryStore) SurgeryRecords(ctx context.Context, patientID string) ([]d
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) FollowupRecords(ctx context.Context, patientID string) ([]domain.FollowupRecord, error) {
+func (s *Store) FollowupRecords(ctx context.Context, patientID string) ([]domain.FollowupRecord, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.FollowupRecord{}, nil
@@ -484,7 +486,7 @@ func (s *MemoryStore) FollowupRecords(ctx context.Context, patientID string) ([]
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) InterviewExtractedFacts(ctx context.Context, patientID string) ([]domain.InterviewExtractedFact, error) {
+func (s *Store) InterviewExtractedFacts(ctx context.Context, patientID string) ([]domain.InterviewExtractedFact, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.InterviewExtractedFact{}, nil
@@ -506,7 +508,7 @@ func (s *MemoryStore) InterviewExtractedFacts(ctx context.Context, patientID str
 	return items, rows.Err()
 }
 
-func (s *MemoryStore) SatisfactionIndicatorScores(ctx context.Context, projectID string) ([]domain.SatisfactionIndicatorScore, error) {
+func (s *Store) SatisfactionIndicatorScores(ctx context.Context, projectID string) ([]domain.SatisfactionIndicatorScore, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
 		return []domain.SatisfactionIndicatorScore{}, nil
@@ -535,4 +537,206 @@ func (s *MemoryStore) SatisfactionIndicatorScores(ctx context.Context, projectID
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) UpsertPatientDiagnosis(ctx context.Context, item domain.PatientDiagnosis) (domain.PatientDiagnosis, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("DX", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.DiagnosisCode, item.DiagnosisName))
+	}
+	if item.DiagnosisType == "" {
+		item.DiagnosisType = "primary"
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO patient_diagnoses (id, patient_id, visit_id, diagnosis_code, diagnosis_name, diagnosis_type, diagnosed_at, department_name, doctor_name, source_system)
+VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE diagnosis_code=VALUES(diagnosis_code), diagnosis_name=VALUES(diagnosis_name), diagnosis_type=VALUES(diagnosis_type), diagnosed_at=VALUES(diagnosed_at), department_name=VALUES(department_name), doctor_name=VALUES(doctor_name), source_system=VALUES(source_system)`,
+		item.ID, item.PatientID, item.VisitID, item.DiagnosisCode, item.DiagnosisName, item.DiagnosisType, item.DiagnosedAt, item.DepartmentName, item.DoctorName, item.SourceSystem)
+	return item, created, err
+}
+
+func (s *Store) UpsertPatientHistory(ctx context.Context, item domain.PatientHistory) (domain.PatientHistory, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("HX", item.PatientID, item.HistoryType, firstNonEmptyStore(item.Title, item.Content))
+	}
+	if item.HistoryType == "" {
+		item.HistoryType = "past"
+	}
+	if item.Title == "" {
+		item.Title = "既往史"
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO patient_histories (id, patient_id, history_type, title, content, recorded_at, source_system)
+VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE history_type=VALUES(history_type), title=VALUES(title), content=VALUES(content), recorded_at=VALUES(recorded_at), source_system=VALUES(source_system)`,
+		item.ID, item.PatientID, item.HistoryType, item.Title, item.Content, item.RecordedAt, item.SourceSystem)
+	return item, created, err
+}
+
+func (s *Store) UpsertMedicationOrder(ctx context.Context, item domain.MedicationOrder) (domain.MedicationOrder, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("MED", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.OrderNo, item.PrescriptionNo, item.DrugCode, item.DrugName))
+	}
+	if item.Status == "" {
+		item.Status = "active"
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO medication_orders (id, patient_id, visit_id, order_no, prescription_no, drug_code, drug_name, generic_name, specification, dosage, dosage_unit, frequency, route, start_at, end_at, days, quantity, manufacturer, doctor_name, pharmacist_name, status, adverse_reaction, compliance)
+VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE drug_name=VALUES(drug_name), generic_name=VALUES(generic_name), specification=VALUES(specification), dosage=VALUES(dosage), dosage_unit=VALUES(dosage_unit), frequency=VALUES(frequency), route=VALUES(route), start_at=VALUES(start_at), end_at=VALUES(end_at), days=VALUES(days), quantity=VALUES(quantity), manufacturer=VALUES(manufacturer), doctor_name=VALUES(doctor_name), pharmacist_name=VALUES(pharmacist_name), status=VALUES(status), adverse_reaction=VALUES(adverse_reaction), compliance=VALUES(compliance)`,
+		item.ID, item.PatientID, item.VisitID, item.OrderNo, item.PrescriptionNo, item.DrugCode, item.DrugName, item.GenericName, item.Specification, item.Dosage, item.DosageUnit, item.Frequency, item.Route, item.StartAt, item.EndAt, item.Days, item.Quantity, item.Manufacturer, item.DoctorName, item.PharmacistName, item.Status, item.AdverseReaction, item.Compliance)
+	return item, created, err
+}
+
+func (s *Store) UpsertLabReport(ctx context.Context, item domain.LabReport) (domain.LabReport, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("LAB", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.ReportNo, item.ReportName))
+	}
+	if item.ReportNo == "" {
+		item.ReportNo = item.ID
+	}
+	if item.Status == "" {
+		item.Status = "reported"
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO lab_reports (id, patient_id, visit_id, report_no, report_name, specimen, ordered_at, reported_at, department_name, doctor_name, status, source_system)
+VALUES (?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE patient_id=VALUES(patient_id), visit_id=VALUES(visit_id), report_name=VALUES(report_name), specimen=VALUES(specimen), ordered_at=VALUES(ordered_at), reported_at=VALUES(reported_at), department_name=VALUES(department_name), doctor_name=VALUES(doctor_name), status=VALUES(status), source_system=VALUES(source_system)`,
+		item.ID, item.PatientID, item.VisitID, item.ReportNo, item.ReportName, item.Specimen, item.OrderedAt, item.ReportedAt, item.DepartmentName, item.DoctorName, item.Status, item.SourceSystem)
+	if err != nil {
+		return item, created, err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT id FROM lab_reports WHERE report_no = ?`, item.ReportNo).Scan(&item.ID); err != nil {
+		return item, created, err
+	}
+	return item, created, nil
+}
+
+func (s *Store) UpsertLabResult(ctx context.Context, item domain.LabResult) (domain.LabResult, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("LAR", item.ReportID, firstNonEmptyStore(item.ItemCode, item.ItemName))
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO lab_results (id, report_id, item_code, item_name, result_value, unit, reference_range, abnormal_flag, numeric_value)
+VALUES (?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)
+ON DUPLICATE KEY UPDATE item_code=VALUES(item_code), item_name=VALUES(item_name), result_value=VALUES(result_value), unit=VALUES(unit), reference_range=VALUES(reference_range), abnormal_flag=VALUES(abnormal_flag), numeric_value=VALUES(numeric_value)`,
+		item.ID, item.ReportID, item.ItemCode, item.ItemName, item.ResultValue, item.Unit, item.ReferenceRange, item.AbnormalFlag, item.NumericValue)
+	return item, created, err
+}
+
+func (s *Store) UpsertExamReport(ctx context.Context, item domain.ExamReport) (domain.ExamReport, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("EXAM", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.ExamNo, item.ExamName))
+	}
+	if item.ExamNo == "" {
+		item.ExamNo = item.ID
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO exam_reports (id, patient_id, visit_id, exam_no, exam_type, exam_name, body_part, report_conclusion, report_findings, ordered_at, reported_at, department_name, doctor_name, source_system)
+VALUES (?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE patient_id=VALUES(patient_id), visit_id=VALUES(visit_id), exam_type=VALUES(exam_type), exam_name=VALUES(exam_name), body_part=VALUES(body_part), report_conclusion=VALUES(report_conclusion), report_findings=VALUES(report_findings), ordered_at=VALUES(ordered_at), reported_at=VALUES(reported_at), department_name=VALUES(department_name), doctor_name=VALUES(doctor_name), source_system=VALUES(source_system)`,
+		item.ID, item.PatientID, item.VisitID, item.ExamNo, item.ExamType, item.ExamName, item.BodyPart, item.ReportConclusion, item.ReportFindings, item.OrderedAt, item.ReportedAt, item.DepartmentName, item.DoctorName, item.SourceSystem)
+	if err != nil {
+		return item, created, err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT id FROM exam_reports WHERE exam_no = ?`, item.ExamNo).Scan(&item.ID); err != nil {
+		return item, created, err
+	}
+	return item, created, nil
+}
+
+func (s *Store) UpsertSurgeryRecord(ctx context.Context, item domain.SurgeryRecord) (domain.SurgeryRecord, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("SURG", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.OperationCode, item.OperationName))
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO surgery_records (id, patient_id, visit_id, operation_code, operation_name, operation_date, surgeon_name, anesthesia_type, operation_level, wound_grade, outcome, source_system)
+VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE operation_code=VALUES(operation_code), operation_name=VALUES(operation_name), operation_date=VALUES(operation_date), surgeon_name=VALUES(surgeon_name), anesthesia_type=VALUES(anesthesia_type), operation_level=VALUES(operation_level), wound_grade=VALUES(wound_grade), outcome=VALUES(outcome), source_system=VALUES(source_system)`,
+		item.ID, item.PatientID, item.VisitID, item.OperationCode, item.OperationName, item.OperationDate, item.SurgeonName, item.AnesthesiaType, item.OperationLevel, item.WoundGrade, item.Outcome, item.SourceSystem)
+	return item, created, err
+}
+
+func (s *Store) UpsertFollowupRecord(ctx context.Context, item domain.FollowupRecord) (domain.FollowupRecord, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("FUR", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.TaskID, item.FollowedAt, item.Summary))
+	}
+	if item.Status == "" {
+		item.Status = "completed"
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO followup_records (id, patient_id, visit_id, task_id, project_id, followup_type, channel, status, summary, satisfaction_score, risk_level, followed_at, operator_name, source_system)
+VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE project_id=VALUES(project_id), followup_type=VALUES(followup_type), channel=VALUES(channel), status=VALUES(status), summary=VALUES(summary), satisfaction_score=VALUES(satisfaction_score), risk_level=VALUES(risk_level), followed_at=VALUES(followed_at), operator_name=VALUES(operator_name), source_system=VALUES(source_system)`,
+		item.ID, item.PatientID, item.VisitID, item.TaskID, item.ProjectID, item.FollowupType, item.Channel, item.Status, item.Summary, item.SatisfactionScore, item.RiskLevel, item.FollowedAt, item.OperatorName, item.SourceSystem)
+	return item, created, err
+}
+
+func (s *Store) UpsertInterviewExtractedFact(ctx context.Context, item domain.InterviewExtractedFact) (domain.InterviewExtractedFact, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return item, false, err
+	}
+	defer db.Close()
+	created := item.ID == ""
+	if item.ID == "" {
+		item.ID = deterministicClinicalID("FACT", item.PatientID, firstNonEmptyStore(item.VisitID, "-"), firstNonEmptyStore(item.InterviewID, "-"), item.FactType, item.FactKey, item.FactValue)
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO interview_extracted_facts (id, patient_id, visit_id, interview_id, fact_type, fact_key, fact_label, fact_value, confidence, extracted_at, source_text)
+VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''))
+ON DUPLICATE KEY UPDATE fact_label=VALUES(fact_label), fact_value=VALUES(fact_value), confidence=VALUES(confidence), extracted_at=VALUES(extracted_at), source_text=VALUES(source_text)`,
+		item.ID, item.PatientID, item.VisitID, item.InterviewID, item.FactType, item.FactKey, item.FactLabel, item.FactValue, item.Confidence, item.ExtractedAt, item.SourceText)
+	return item, created, err
+}
+
+func deterministicClinicalID(prefix string, parts ...string) string {
+	seed := ""
+	for _, part := range parts {
+		if part != "" {
+			seed += "|" + part
+		}
+	}
+	if seed == "" {
+		return uuid.NewString()
+	}
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(prefix+seed)).String()
 }

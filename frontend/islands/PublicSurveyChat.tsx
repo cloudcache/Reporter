@@ -15,7 +15,7 @@ interface ComponentItem {
   scale?: number
 }
 interface SurveyPayload {
-  share: { id: string; title: string; token: string; channel?: string }
+  share: { id: string; title: string; token: string; channel?: string; config?: Record<string, unknown> }
   template: { id: string; label: string; hint?: string; scenario?: string; components: ComponentItem[] }
   requiresVerification?: boolean
 }
@@ -30,6 +30,7 @@ export function PublicSurveyChat() {
   const [verifiedPatient, setVerifiedPatient] = useState<VerificationPayload | null>(null)
   const [message, setMessage] = useState("正在加载调查表单...")
   const [submitted, setSubmitted] = useState(false)
+  const [displayMode, setDisplayMode] = useState({ tablet: false, kiosk: false, point: "" })
   const [startedAt] = useState(() => new Date().toISOString())
   const sourceRef = useRef<EventSource | null>(null)
 
@@ -41,6 +42,7 @@ export function PublicSurveyChat() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const token = params.get("token") || ""
+    setDisplayMode({ tablet: params.get("mode") === "tablet", kiosk: params.get("kiosk") === "1", point: params.get("point") || "" })
     if (!token) {
       setMessage("缺少调查链接参数，请确认链接是否完整")
       return
@@ -49,6 +51,11 @@ export function PublicSurveyChat() {
     publicJson<SurveyPayload>(`/api/v1/public/survey/${token}`)
       .then((data: SurveyPayload) => {
         setSurvey(data)
+        setDisplayMode((current) => ({
+          tablet: current.tablet || data.share.channel === "tablet" || data.share.config?.tabletMode === true,
+          kiosk: current.kiosk || data.share.config?.kioskMode === true,
+          point: current.point || String(data.share.config?.pointCode || data.share.config?.pointName || ""),
+        }))
         if (data.requiresVerification) {
           setMessage("")
           return
@@ -151,9 +158,9 @@ export function PublicSurveyChat() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f7fb] text-ink">
+    <main className={`min-h-screen bg-[#f4f7fb] text-ink ${displayMode.tablet ? "text-[18px]" : ""}`}>
       <div className="survey-hero">
-        <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8">
+        <div className={`mx-auto grid w-full gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8 ${displayMode.tablet ? "max-w-7xl" : "max-w-6xl"}`}>
           <section className="min-w-0">
             <div className="mb-5">
               <div className="mb-3 inline-flex rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-primary shadow-sm">医院随访调查</div>
@@ -180,12 +187,14 @@ export function PublicSurveyChat() {
               <Info label="模板" value={survey?.template.label || "-"} />
               <Info label="类型" value={survey?.template.scenario || "调查访谈"} />
               <Info label="方式" value={channelLabel(survey?.share.channel)} />
+              {displayMode.point && <Info label="点位" value={displayMode.point} />}
+              {displayMode.tablet && <Info label="模式" value={displayMode.kiosk ? "平板自助全屏" : "平板调查"} />}
             </div>
           </aside>
         </div>
       </div>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-5 px-4 pb-24 pt-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8">
+      <div className={`mx-auto grid w-full gap-5 px-4 pb-24 pt-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8 ${displayMode.tablet ? "max-w-7xl" : "max-w-6xl"}`}>
         <section className="min-w-0 rounded-lg border border-line bg-white shadow-sm">
           <div className="border-b border-line px-4 py-4 sm:px-5">
             <h2 className="text-base font-semibold">调查内容</h2>
@@ -217,7 +226,7 @@ export function PublicSurveyChat() {
               <div key={section.title} className="grid gap-3">
                 {section.title && <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold">{section.title}</div>}
                 {section.items.map((component, index) => (
-                  <article id={`field-${component.id}`} key={component.id} className="rounded-lg border border-line bg-white p-4 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-blue-100">
+                  <article id={`field-${component.id}`} key={component.id} className={`rounded-lg border border-line bg-white transition focus-within:border-primary focus-within:ring-2 focus-within:ring-blue-100 ${displayMode.tablet ? "p-5" : "p-4"}`}>
                     <div className="mb-3 flex items-start gap-3">
                       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-blue-50 text-xs font-semibold text-primary">{index + 1}</span>
                       <div className="min-w-0">
@@ -331,7 +340,7 @@ function isAutoFilledField(id: string) {
 }
 
 function channelLabel(value?: string) {
-  const labels: Record<string, string> = { web: "网页链接", wechat: "微信链接", qq: "QQ 链接", sms: "短信链接" }
+  const labels: Record<string, string> = { web: "网页链接", qr: "院内二维码", tablet: "平板调查", wechat: "微信公众号", wework: "企业微信", mini_program: "微信小程序", qq: "QQ 链接", sms: "短信链接", phone: "电话随访" }
   return labels[value || ""] || "公开链接"
 }
 

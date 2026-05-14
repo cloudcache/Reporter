@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { SurveyShareManager } from "../../islands/SurveyShareManager"
+---
+
+<AppLayout>
+  <PageHeader title="编辑项目" description="维护项目属性、角色人员、任务模板、表单数据、能力模块和期次" />
+  <SurveyShareManager client:load view="edit" initialTab="data" />
+</AppLayout>

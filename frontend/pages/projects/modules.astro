@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { SurveyShareManager } from "../../islands/SurveyShareManager"
+---
+
+<AppLayout>
+  <PageHeader title="项目 / 能力模块" description="配置项目启用的渠道、答卷、指标、清洗、分析和整改能力" />
+  <SurveyShareManager client:load initialTab="modules" />
+</AppLayout>
