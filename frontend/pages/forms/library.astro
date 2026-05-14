@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { FormLibraryManager } from "../../islands/FormLibraryManager"
+---
+
+<AppLayout>
+  <PageHeader title="表单组件库" description="维护原子组件、医疗公共组件和业务模板，供随访和调查复用" />
+  <FormLibraryManager client:load />
+</AppLayout>

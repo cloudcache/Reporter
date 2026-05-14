@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { FollowupPlanManager } from "../../islands/FollowupPlanManager"
+---
+
+<AppLayout>
+  <PageHeader title="随访方案" description="医生/管理员配置疾病、出院、术后、慢病等随访规则，并生成任务" />
+  <FollowupPlanManager client:load />
+</AppLayout>

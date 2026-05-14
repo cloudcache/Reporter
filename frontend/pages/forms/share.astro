@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { SurveyShareManager } from "../../islands/SurveyShareManager"
+---
+
+<AppLayout>
+  <PageHeader title="满意度项目" description="管理满意度项目、采集渠道、患者验证、答卷入库和基础清洗统计" />
+  <SurveyShareManager client:load />
+</AppLayout>

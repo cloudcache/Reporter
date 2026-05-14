@@ -1,0 +1,30 @@
+environment: development
+businessConfigDB: true
+
+log:
+  level: info
+
+http:
+  addr: ":8080"
+  readHeaderTimeout: 5s
+  shutdownTimeout: 10s
+
+auth:
+  jwtSecret: dev-secret-change-me
+  accessTokenTTL: 15m0s
+  refreshTokenTTL: 168h0m0s
+
+database:
+  driver: mysql
+  dsn: "root:@tcp(127.0.0.1:3306)/report?charset=utf8mb4&loc=Local&parseTime=true"
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 30m0s
+
+redis:
+  enabled: false
+  addr: 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  ttl: 1h0m0s

@@ -1,0 +1,10 @@
+---
+import AppLayout from "../layouts/AppLayout.astro"
+import PageHeader from "../components/PageHeader.astro"
+import { PatientManager } from "../islands/PatientManager"
+---
+
+<AppLayout>
+  <PageHeader title="患者管理" description="患者主索引与数据采集记录入口" />
+  <PatientManager client:load />
+</AppLayout>

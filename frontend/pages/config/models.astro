@@ -1,0 +1,10 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { PlatformConfigManager } from "../../islands/PlatformConfigManager"
+---
+
+<AppLayout>
+  <PageHeader title="大模型配置" description="管理实时识别回填和离线录音分析模型接口" />
+  <PlatformConfigManager section="models" client:load />
+</AppLayout>

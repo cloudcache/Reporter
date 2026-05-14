@@ -1,0 +1,152 @@
+---
+import "../styles/global.css"
+import { AccountMenu } from "../islands/AccountMenu"
+
+const navGroups = [
+  {
+    label: "业务工作台",
+    items: [
+      { href: "/", label: "概览", icon: "G" },
+      { href: "/patients", label: "患者管理", icon: "P" },
+      { href: "/datasets", label: "数据集", icon: "D" },
+      { href: "/design", label: "表单设计", icon: "F" },
+      { href: "/reports", label: "报表", icon: "R" },
+      { href: "/complaints", label: "评价投诉", icon: "E" },
+    ],
+  },
+  {
+    label: "呼叫中心",
+    items: [
+      { href: "/followups/tasks", label: "随访任务", icon: "T" },
+      { href: "/followups/plans", label: "随访方案", icon: "L" },
+      { href: "/call-center", label: "坐席管理", icon: "C" },
+    ],
+  },
+  {
+    label: "表单问卷",
+    items: [
+      { href: "/forms/library", label: "组件库", icon: "B" },
+      { href: "/design", label: "表单设计", icon: "F" },
+      { href: "/forms/share", label: "满意度项目", icon: "Q" },
+    ],
+  },
+  {
+    label: "配置中心",
+    items: [
+      { href: "/sources", label: "数据源", icon: "S" },
+      { href: "/config/channels", label: "接口配置", icon: "I" },
+      { href: "/config/sip", label: "SIP 网关", icon: "W" },
+      { href: "/config/storage", label: "存储配置", icon: "O" },
+      { href: "/config/recording", label: "录音配置", icon: "V" },
+      { href: "/config/models", label: "大模型配置", icon: "M" },
+    ],
+  },
+  {
+    label: "系统管理",
+    items: [
+      { href: "/account", label: "个人中心", icon: "A" },
+      { href: "/system", label: "用户管理", icon: "U" },
+      { href: "/system/dictionaries", label: "字典管理", icon: "Y" },
+    ],
+  },
+]
+const currentPath = Astro.url.pathname
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Reporter 医疗研究数据采集和报表平台" />
+    <title>Reporter</title>
+  </head>
+  <body class="bg-background antialiased">
+    <nav class="fixed left-0 right-0 top-0 z-50 border-b border-line bg-surface">
+      <div class="flex h-16 items-center justify-between px-4">
+        <div class="flex items-center gap-3">
+          <button id="sidebarToggle" class="grid h-9 w-9 place-items-center rounded-lg border border-line text-sm font-semibold text-muted hover:border-primary hover:text-primary" type="button" aria-label="收起或展开侧边栏">
+            ☰
+          </button>
+          <a href="/" class="flex items-center gap-3">
+            <span class="grid h-9 w-9 place-items-center rounded-lg bg-primary text-sm font-bold text-white">R</span>
+            <span class="text-lg font-semibold text-ink">Reporter</span>
+          </a>
+          <span class="hidden rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-primary md:inline-flex">医疗研究管理</span>
+        </div>
+        <div class="hidden w-full max-w-md md:block">
+          <label class="relative block">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">⌕</span>
+            <input class="h-10 w-full rounded-lg border border-line bg-gray-50 px-9 text-sm text-ink outline-none focus:border-primary focus:bg-white focus:ring-2 focus:ring-blue-100" placeholder="搜索患者、表单、数据源" />
+          </label>
+        </div>
+        <AccountMenu client:load />
+      </div>
+    </nav>
+
+    <aside class="app-sidebar fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r border-line bg-surface">
+      <div class="h-full overflow-y-auto px-3 py-4">
+        <nav class="space-y-5">
+          {navGroups.map((group) => (
+            <div>
+              <p class="nav-group-label mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted">{group.label}</p>
+              <div class="space-y-1">
+                {group.items.map((item) => {
+                  const active = item.href === "/" ? currentPath === "/" : currentPath.startsWith(item.href)
+                  return (
+                    <a
+                      href={item.href}
+                      class:list={[
+                        "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        active ? "bg-blue-50 text-primary" : "text-gray-700 hover:bg-gray-100 hover:text-ink",
+                      ]}
+                    >
+                      <span class:list={[
+                        "grid h-7 w-7 place-items-center rounded-md text-xs font-semibold",
+                        active ? "bg-primary text-white" : "bg-gray-100 text-gray-500 group-hover:bg-white",
+                      ]}>{item.icon}</span>
+                      <span class="nav-item-label">{item.label}</span>
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        <div class="sidebar-extra mt-6 rounded-lg border border-line bg-gray-50 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-muted">当前环境</p>
+          <p class="mt-2 text-sm font-medium text-ink">本地开发</p>
+          <p class="mt-1 text-xs text-muted">API: 127.0.0.1:8080</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <slot />
+    </main>
+    <script is:inline>
+      const collapsedKey = "reporter.sidebar.collapsed";
+      const applySidebarState = () => {
+        const collapsed = localStorage.getItem(collapsedKey) === "true";
+        document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
+      };
+      applySidebarState();
+      document.getElementById("sidebarToggle")?.addEventListener("click", () => {
+        if (window.matchMedia("(max-width: 900px)").matches) {
+          document.documentElement.classList.toggle("mobile-sidebar-open");
+          return;
+        }
+        const next = !(localStorage.getItem(collapsedKey) === "true");
+        localStorage.setItem(collapsedKey, String(next));
+        applySidebarState();
+      });
+      document.querySelector(".app-sidebar")?.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (window.matchMedia("(max-width: 900px)").matches && target?.closest("a")) {
+          document.documentElement.classList.remove("mobile-sidebar-open");
+        }
+      });
+    </script>
+  </body>
+</html>
