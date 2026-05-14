@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { publicFetch, publicJson } from "../lib/auth"
 
 interface InstallStatus {
   installed: boolean
@@ -6,8 +7,6 @@ interface InstallStatus {
   databaseDsn: boolean
   lockCreatedAt?: string
 }
-
-const apiBase = "http://127.0.0.1:8080"
 
 export function InstallWizard() {
   const [status, setStatus] = useState<InstallStatus | null>(null)
@@ -34,9 +33,7 @@ export function InstallWizard() {
 
   async function loadStatus() {
     try {
-      const response = await fetch(`${apiBase}/api/v1/install/status`)
-      if (!response.ok) throw new Error(await response.text())
-      const data = await response.json() as InstallStatus
+      const data = await publicJson<InstallStatus>("/api/v1/install/status")
       setStatus(data)
       if (data.installed) {
         setMessage("系统已安装，正在跳转登录页。")
@@ -52,9 +49,8 @@ export function InstallWizard() {
   async function testDB() {
     setTesting(true)
     try {
-      const response = await fetch(`${apiBase}/api/v1/install/test-db`, {
+      const response = await publicFetch("/api/v1/install/test-db", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(database),
       })
       const data = await response.json()
@@ -74,9 +70,8 @@ export function InstallWizard() {
     }
     setInstalling(true)
     try {
-      const response = await fetch(`${apiBase}/api/v1/install`, {
+      const response = await publicFetch("/api/v1/install", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ database, admin: { username: admin.username, displayName: admin.displayName, password: admin.password } }),
       })
       const data = await response.json()

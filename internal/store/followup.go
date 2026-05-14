@@ -205,11 +205,7 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), kind = VALUES(kind), status = VALUE
 			return err
 		}
 	}
-	dictionaries := []domain.Dictionary{
-		{ID: "DICT-GENDER", Code: "gender", Name: "性别字典", Category: "患者基础", Items: []domain.DictionaryEntry{{Key: "M", Label: "男", Value: "男"}, {Key: "F", Label: "女", Value: "女"}, {Key: "O", Label: "其他", Value: "其他"}}},
-		{ID: "DICT-FOLLOWUP-STATUS", Code: "followup_status", Name: "随访任务状态", Category: "随访中心", Items: []domain.DictionaryEntry{{Key: "pending", Label: "待随访", Value: "pending"}, {Key: "assigned", Label: "已分配", Value: "assigned"}, {Key: "in_progress", Label: "进行中", Value: "in_progress"}, {Key: "completed", Label: "已完成", Value: "completed"}, {Key: "failed", Label: "失败", Value: "failed"}}},
-	}
-	for _, item := range dictionaries {
+	for _, item := range DefaultDictionaries() {
 		raw, err := json.Marshal(item.Items)
 		if err != nil {
 			return err
@@ -242,6 +238,101 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), scenario = VALUES(scenario), diseas
 		}
 	}
 	return nil
+}
+
+func DefaultDictionaries() []domain.Dictionary {
+	return []domain.Dictionary{
+		{ID: "DICT-GENDER", Code: "gender", Name: "性别字典", Category: "患者基础", Items: []domain.DictionaryEntry{{Key: "M", Label: "男", Value: "男"}, {Key: "F", Label: "女", Value: "女"}, {Key: "O", Label: "其他", Value: "其他"}}},
+		{ID: "DICT-FOLLOWUP-STATUS", Code: "followup_status", Name: "随访任务状态", Category: "随访中心", Items: []domain.DictionaryEntry{{Key: "pending", Label: "待随访", Value: "pending"}, {Key: "assigned", Label: "已分配", Value: "assigned"}, {Key: "in_progress", Label: "进行中", Value: "in_progress"}, {Key: "completed", Label: "已完成", Value: "completed"}, {Key: "failed", Label: "失败", Value: "failed"}}},
+		{ID: "DICT-EMR-FIELDS", Code: "emr_common_fields", Name: "电子病历常用字段", Category: "电子病历", Description: "门诊、住院、专科病历同步和表单映射常用字段", Items: []domain.DictionaryEntry{
+			{Key: "record_no", Label: "病历号", Value: "record_no"},
+			{Key: "record_type", Label: "病历类型", Value: "record_type"},
+			{Key: "record_title", Label: "病历标题", Value: "record_title"},
+			{Key: "chief_complaint", Label: "主诉", Value: "chief_complaint"},
+			{Key: "present_illness", Label: "现病史", Value: "present_illness"},
+			{Key: "past_history", Label: "既往史", Value: "past_history"},
+			{Key: "personal_history", Label: "个人史", Value: "personal_history"},
+			{Key: "allergy_history", Label: "过敏史", Value: "allergy_history"},
+			{Key: "physical_exam", Label: "体格检查", Value: "physical_exam"},
+			{Key: "specialist_exam", Label: "专科检查", Value: "specialist_exam"},
+			{Key: "auxiliary_exam", Label: "辅助检查", Value: "auxiliary_exam"},
+			{Key: "diagnosis_code", Label: "诊断编码", Value: "diagnosis_code"},
+			{Key: "diagnosis_name", Label: "诊断名称", Value: "diagnosis_name"},
+			{Key: "treatment_plan", Label: "诊疗计划", Value: "treatment_plan"},
+			{Key: "doctor_advice", Label: "医嘱", Value: "doctor_advice"},
+			{Key: "recorded_at", Label: "记录时间", Value: "recorded_at"},
+			{Key: "record_doctor", Label: "记录医生", Value: "record_doctor"},
+			{Key: "department_code", Label: "科室编码", Value: "department_code"},
+			{Key: "department_name", Label: "科室名称", Value: "department_name"},
+			{Key: "source_system", Label: "来源系统", Value: "source_system"},
+		}},
+		{ID: "DICT-CASE-FIELDS", Code: "case_common_fields", Name: "病例常用字段", Category: "病例管理", Description: "病例建档、科研队列、病案首页和随访筛选常用字段", Items: []domain.DictionaryEntry{
+			{Key: "case_no", Label: "病例号", Value: "case_no"},
+			{Key: "patient_no", Label: "档案号", Value: "patient_no"},
+			{Key: "patient_name", Label: "患者姓名", Value: "patient_name"},
+			{Key: "gender", Label: "性别", Value: "gender"},
+			{Key: "age", Label: "年龄", Value: "age"},
+			{Key: "id_card_no", Label: "身份证号", Value: "id_card_no"},
+			{Key: "phone", Label: "联系电话", Value: "phone"},
+			{Key: "case_source", Label: "病例来源", Value: "case_source"},
+			{Key: "disease_code", Label: "病种编码", Value: "disease_code"},
+			{Key: "disease_name", Label: "病种名称", Value: "disease_name"},
+			{Key: "primary_diagnosis_code", Label: "主要诊断编码", Value: "primary_diagnosis_code"},
+			{Key: "primary_diagnosis_name", Label: "主要诊断名称", Value: "primary_diagnosis_name"},
+			{Key: "tumor_stage", Label: "肿瘤分期", Value: "tumor_stage"},
+			{Key: "pathology_no", Label: "病理号", Value: "pathology_no"},
+			{Key: "pathology_diagnosis", Label: "病理诊断", Value: "pathology_diagnosis"},
+			{Key: "operation_name", Label: "手术名称", Value: "operation_name"},
+			{Key: "operation_date", Label: "手术日期", Value: "operation_date"},
+			{Key: "discharge_status", Label: "出院情况", Value: "discharge_status"},
+			{Key: "followup_flag", Label: "随访标识", Value: "followup_flag"},
+			{Key: "case_created_at", Label: "建档时间", Value: "case_created_at"},
+		}},
+		{ID: "DICT-VISIT-FIELDS", Code: "visit_common_fields", Name: "就诊常用字段", Category: "就诊信息", Description: "门诊、急诊、住院、出院记录同步常用字段", Items: []domain.DictionaryEntry{
+			{Key: "visit_no", Label: "就诊号", Value: "visit_no"},
+			{Key: "visit_type", Label: "就诊类型", Value: "visit_type"},
+			{Key: "outpatient_no", Label: "门诊号", Value: "outpatient_no"},
+			{Key: "inpatient_no", Label: "住院号", Value: "inpatient_no"},
+			{Key: "admission_no", Label: "入院登记号", Value: "admission_no"},
+			{Key: "visit_at", Label: "就诊时间", Value: "visit_at"},
+			{Key: "admission_at", Label: "入院时间", Value: "admission_at"},
+			{Key: "discharge_at", Label: "出院时间", Value: "discharge_at"},
+			{Key: "department_code", Label: "就诊科室编码", Value: "department_code"},
+			{Key: "department_name", Label: "就诊科室", Value: "department_name"},
+			{Key: "ward_name", Label: "病区", Value: "ward_name"},
+			{Key: "bed_no", Label: "床号", Value: "bed_no"},
+			{Key: "attending_doctor", Label: "主治医生", Value: "attending_doctor"},
+			{Key: "responsible_nurse", Label: "责任护士", Value: "responsible_nurse"},
+			{Key: "diagnosis_code", Label: "就诊诊断编码", Value: "diagnosis_code"},
+			{Key: "diagnosis_name", Label: "就诊诊断", Value: "diagnosis_name"},
+			{Key: "visit_status", Label: "就诊状态", Value: "visit_status"},
+			{Key: "discharge_disposition", Label: "离院方式", Value: "discharge_disposition"},
+			{Key: "total_fee", Label: "总费用", Value: "total_fee"},
+			{Key: "insurance_type", Label: "医保类型", Value: "insurance_type"},
+		}},
+		{ID: "DICT-MEDICATION-FIELDS", Code: "medication_common_fields", Name: "用药常用字段", Category: "用药信息", Description: "处方、医嘱、用药随访和不良反应采集常用字段", Items: []domain.DictionaryEntry{
+			{Key: "order_no", Label: "医嘱号", Value: "order_no"},
+			{Key: "prescription_no", Label: "处方号", Value: "prescription_no"},
+			{Key: "drug_code", Label: "药品编码", Value: "drug_code"},
+			{Key: "drug_name", Label: "药品名称", Value: "drug_name"},
+			{Key: "generic_name", Label: "通用名", Value: "generic_name"},
+			{Key: "specification", Label: "规格", Value: "specification"},
+			{Key: "dosage", Label: "单次剂量", Value: "dosage"},
+			{Key: "dosage_unit", Label: "剂量单位", Value: "dosage_unit"},
+			{Key: "frequency", Label: "用药频次", Value: "frequency"},
+			{Key: "route", Label: "给药途径", Value: "route"},
+			{Key: "start_at", Label: "开始时间", Value: "start_at"},
+			{Key: "end_at", Label: "结束时间", Value: "end_at"},
+			{Key: "days", Label: "用药天数", Value: "days"},
+			{Key: "quantity", Label: "数量", Value: "quantity"},
+			{Key: "manufacturer", Label: "生产厂家", Value: "manufacturer"},
+			{Key: "doctor_name", Label: "开立医生", Value: "doctor_name"},
+			{Key: "pharmacist_name", Label: "审核药师", Value: "pharmacist_name"},
+			{Key: "medication_status", Label: "用药状态", Value: "medication_status"},
+			{Key: "adverse_reaction", Label: "不良反应", Value: "adverse_reaction"},
+			{Key: "compliance", Label: "用药依从性", Value: "compliance"},
+		}},
+	}
 }
 
 func queryDepartments(ctx context.Context, db *sql.DB) (map[string]domain.Department, error) {

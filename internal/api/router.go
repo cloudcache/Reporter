@@ -43,6 +43,7 @@ type Server struct {
 	sip           sipgateway.Gateway
 	authMu        sync.Mutex
 	loginFailures map[string]int
+	refreshHits   map[string][]time.Time
 	captchas      map[string]captchaChallenge
 }
 
@@ -74,6 +75,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		authz:         authz,
 		sip:           deps.SIP,
 		loginFailures: map[string]int{},
+		refreshHits:   map[string][]time.Time{},
 		captchas:      map[string]captchaChallenge{},
 	}
 	if s.sip == nil {
@@ -121,8 +123,17 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Post("/patients", s.withPermission("/api/v1/patients", "create", s.createPatient))
 			r.Get("/patients/{id}", s.withPermission("/api/v1/patients", "read", s.getPatient))
 			r.Put("/patients/{id}", s.withPermission("/api/v1/patients", "update", s.updatePatient))
+			r.Get("/patients/{id}/360", s.withPermission("/api/v1/patients", "read", s.getPatient360))
 			r.Get("/patients/{id}/visits", s.withPermission("/api/v1/patients", "read", s.listPatientVisits))
 			r.Get("/patients/{id}/medical-records", s.withPermission("/api/v1/patients", "read", s.listPatientMedicalRecords))
+			r.Get("/patients/{id}/diagnoses", s.withPermission("/api/v1/patients", "read", s.listPatientDiagnoses))
+			r.Get("/patients/{id}/histories", s.withPermission("/api/v1/patients", "read", s.listPatientHistories))
+			r.Get("/patients/{id}/medications", s.withPermission("/api/v1/patients", "read", s.listPatientMedications))
+			r.Get("/patients/{id}/labs", s.withPermission("/api/v1/patients", "read", s.listPatientLabs))
+			r.Get("/patients/{id}/exams", s.withPermission("/api/v1/patients", "read", s.listPatientExams))
+			r.Get("/patients/{id}/surgeries", s.withPermission("/api/v1/patients", "read", s.listPatientSurgeries))
+			r.Get("/patients/{id}/followup-records", s.withPermission("/api/v1/patients", "read", s.listPatientFollowupRecords))
+			r.Get("/patients/{id}/interview-facts", s.withPermission("/api/v1/patients", "read", s.listPatientInterviewFacts))
 			r.Get("/patient-tags", s.withPermission("/api/v1/patients", "read", s.listPatientTags))
 			r.Post("/patient-tags", s.withPermission("/api/v1/patients", "update", s.upsertPatientTag))
 			r.Get("/patient-groups", s.withPermission("/api/v1/patients", "read", s.listPatientGroups))
@@ -167,6 +178,23 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/satisfaction/submissions/{id}", s.withPermission("/api/v1/forms", "read", s.getSurveySubmission))
 			r.Put("/satisfaction/submissions/{id}/quality", s.withPermission("/api/v1/forms", "update", s.updateSurveySubmissionQuality))
 			r.Get("/satisfaction/stats", s.withPermission("/api/v1/forms", "read", s.satisfactionStats))
+			r.Get("/satisfaction/indicators", s.withPermission("/api/v1/forms", "read", s.listSatisfactionIndicators))
+			r.Post("/satisfaction/indicators", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIndicator))
+			r.Put("/satisfaction/indicators/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIndicator))
+			r.Get("/satisfaction/indicator-questions", s.withPermission("/api/v1/forms", "read", s.listSatisfactionIndicatorQuestions))
+			r.Post("/satisfaction/indicator-questions", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIndicatorQuestion))
+			r.Put("/satisfaction/indicator-questions/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIndicatorQuestion))
+			r.Get("/satisfaction/indicator-scores", s.withPermission("/api/v1/forms", "read", s.listSatisfactionIndicatorScores))
+			r.Get("/satisfaction/cleaning-rules", s.withPermission("/api/v1/forms", "read", s.listSatisfactionCleaningRules))
+			r.Post("/satisfaction/cleaning-rules", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionCleaningRule))
+			r.Put("/satisfaction/cleaning-rules/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionCleaningRule))
+			r.Get("/satisfaction/issues", s.withPermission("/api/v1/forms", "read", s.listSatisfactionIssues))
+			r.Post("/satisfaction/issues", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIssue))
+			r.Put("/satisfaction/issues/{id}", s.withPermission("/api/v1/forms", "update", s.upsertSatisfactionIssue))
+			r.Get("/satisfaction/issues/{id}/events", s.withPermission("/api/v1/forms", "read", s.listSatisfactionIssueEvents))
+			r.Post("/satisfaction/issues/{id}/events", s.withPermission("/api/v1/forms", "update", s.addSatisfactionIssueEvent))
+			r.Get("/satisfaction/submissions/{id}/audit-logs", s.withPermission("/api/v1/forms", "read", s.listSurveySubmissionAuditLogs))
+			r.Post("/satisfaction/issues/generate", s.withPermission("/api/v1/forms", "update", s.generateSatisfactionIssues))
 			r.Get("/survey-share-links", s.withPermission("/api/v1/forms", "read", s.listSurveyShareLinks))
 			r.Post("/survey-share-links", s.withPermission("/api/v1/forms", "update", s.createSurveyShareLink))
 
@@ -285,7 +313,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	setAuthCookie(w, "reporter_access", access, "/api/v1", s.cfg.Auth.AccessTokenTTL)
 	http.SetCookie(w, &http.Cookie{Name: "reporter_refresh", Value: refresh, Path: "/api/v1/auth", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: int(s.cfg.Auth.RefreshTokenTTL.Seconds())})
 	s.audit(r, user.ID, "auth.login", "auth", nil, map[string]string{"username": user.Username})
-	writeJSON(w, http.StatusOK, map[string]interface{}{"user": user})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"user": user, "accessToken": access})
 }
 
 func (s *Server) captcha(w http.ResponseWriter, r *http.Request) {
@@ -364,6 +392,10 @@ func (s *Server) reloadIdentityFromSQL(ctx context.Context, driver, dsn string) 
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	if !s.allowTokenRefresh(tokenRefreshKey(r)) {
+		http.Error(w, "refresh too frequent", http.StatusTooManyRequests)
+		return
+	}
 	cookie, err := r.Cookie("reporter_refresh")
 	if err != nil {
 		http.Error(w, "refresh token required", http.StatusUnauthorized)
@@ -380,7 +412,7 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setAuthCookie(w, "reporter_access", access, "/api/v1", s.cfg.Auth.AccessTokenTTL)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "accessToken": access})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -609,6 +641,87 @@ func (s *Server) listPatientVisits(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listPatientMedicalRecords(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.store.MedicalRecords(chi.URLParam(r, "id")))
+}
+
+func (s *Server) getPatient360(w http.ResponseWriter, r *http.Request) {
+	item, err := s.store.Patient360(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (s *Server) listPatientDiagnoses(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.PatientDiagnoses(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientHistories(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.PatientHistories(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientMedications(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.MedicationOrders(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientLabs(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.LabReports(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientExams(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ExamReports(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientSurgeries(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SurgeryRecords(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientFollowupRecords(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.FollowupRecords(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listPatientInterviewFacts(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.InterviewExtractedFacts(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) listPatientTags(w http.ResponseWriter, r *http.Request) {
@@ -1209,6 +1322,176 @@ func (s *Server) satisfactionStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+func (s *Server) listSatisfactionIndicators(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SatisfactionIndicators(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) upsertSatisfactionIndicator(w http.ResponseWriter, r *http.Request) {
+	var item domain.SatisfactionIndicator
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	if id := chi.URLParam(r, "id"); id != "" {
+		item.ID = id
+	}
+	saved, err := s.store.UpsertSatisfactionIndicator(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listSatisfactionIndicatorQuestions(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SatisfactionIndicatorQuestions(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) upsertSatisfactionIndicatorQuestion(w http.ResponseWriter, r *http.Request) {
+	var item domain.SatisfactionIndicatorQuestion
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	if id := chi.URLParam(r, "id"); id != "" {
+		item.ID = id
+	}
+	saved, err := s.store.UpsertSatisfactionIndicatorQuestion(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listSatisfactionIndicatorScores(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SatisfactionIndicatorScores(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listSatisfactionCleaningRules(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SatisfactionCleaningRules(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) upsertSatisfactionCleaningRule(w http.ResponseWriter, r *http.Request) {
+	var item domain.SatisfactionCleaningRule
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	if id := chi.URLParam(r, "id"); id != "" {
+		item.ID = id
+	}
+	saved, err := s.store.UpsertSatisfactionCleaningRule(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listSatisfactionIssues(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SatisfactionIssues(r.Context(), r.URL.Query().Get("projectId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) upsertSatisfactionIssue(w http.ResponseWriter, r *http.Request) {
+	var item domain.SatisfactionIssue
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	if id := chi.URLParam(r, "id"); id != "" {
+		item.ID = id
+	}
+	saved, err := s.store.UpsertSatisfactionIssue(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listSatisfactionIssueEvents(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SatisfactionIssueEvents(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) addSatisfactionIssueEvent(w http.ResponseWriter, r *http.Request) {
+	var item domain.SatisfactionIssueEvent
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	item.IssueID = chi.URLParam(r, "id")
+	item.ActorID = actorID(r)
+	saved, err := s.store.AddSatisfactionIssueEvent(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listSurveySubmissionAuditLogs(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.SurveySubmissionAuditLogs(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) generateSatisfactionIssues(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("projectId")
+	items, err := s.store.SurveySubmissions(r.Context(), projectID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	created := []domain.SatisfactionIssue{}
+	for _, item := range items {
+		if low := numericAnswer(item.Answers["overall_satisfaction"]); low != nil && *low <= 3 {
+			issue, err := s.store.UpsertSatisfactionIssue(r.Context(), domain.SatisfactionIssue{
+				ProjectID:             item.ProjectID,
+				SubmissionID:          item.ID,
+				Title:                 "低满意度答卷需整改",
+				Source:                "low_score",
+				ResponsibleDepartment: firstNonEmpty(stringAnswer(item.Answers["department"]), "待分派"),
+				Severity:              "high",
+				Suggestion:            "结合答卷详情核查服务环节，形成整改措施并复评。",
+				Status:                "open",
+			})
+			if err == nil {
+				created = append(created, issue)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, created)
+}
+
 func (s *Server) publicSurvey(w http.ResponseWriter, r *http.Request) {
 	share, err := s.store.SurveyShareByToken(r.Context(), chi.URLParam(r, "token"))
 	if err != nil {
@@ -1552,7 +1835,12 @@ func (s *Server) streamSurveyTemplate(w http.ResponseWriter, formTemplateID stri
 }
 
 func (s *Server) listReports(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Reports())
+	items, err := s.store.ReportDefinitions(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) createReport(w http.ResponseWriter, r *http.Request) {
@@ -1560,15 +1848,19 @@ func (s *Server) createReport(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &report) {
 		return
 	}
-	report = s.store.CreateReport(report)
+	report, err := s.store.CreateReportDefinition(r.Context(), report)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "report.create", "/api/v1/reports/"+report.ID, nil, report)
 	writeJSON(w, http.StatusCreated, report)
 }
 
 func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
-	report, ok := s.store.Report(chi.URLParam(r, "id"))
-	if !ok {
-		http.NotFound(w, r)
+	report, err := s.store.ReportDefinition(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
@@ -1576,16 +1868,16 @@ func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.Report(id)
-	if !ok {
-		http.NotFound(w, r)
+	before, err := s.store.ReportDefinition(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
 		return
 	}
 	var patch domain.Report
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	report, err := s.store.UpdateReport(id, patch)
+	report, err := s.store.UpdateReportDefinition(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1595,7 +1887,7 @@ func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) queryReport(w http.ResponseWriter, r *http.Request) {
-	result, err := s.store.QueryReport(chi.URLParam(r, "id"))
+	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1608,7 +1900,7 @@ func (s *Server) addReportWidget(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &widget) {
 		return
 	}
-	widget, err := s.store.AddReportWidget(chi.URLParam(r, "id"), widget)
+	widget, err := s.store.AddReportDefinitionWidget(r.Context(), chi.URLParam(r, "id"), widget)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -2363,6 +2655,10 @@ func loginFailureKey(r *http.Request, username string) string {
 	return strings.ToLower(strings.TrimSpace(username)) + "|" + clientIP(r)
 }
 
+func tokenRefreshKey(r *http.Request) string {
+	return clientIP(r) + "|" + r.UserAgent()
+}
+
 func clientIP(r *http.Request) string {
 	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
 		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
@@ -2387,6 +2683,27 @@ func (s *Server) resetLoginFailure(key string) {
 	s.authMu.Lock()
 	defer s.authMu.Unlock()
 	delete(s.loginFailures, key)
+}
+
+func (s *Server) allowTokenRefresh(key string) bool {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+	now := time.Now()
+	windowStart := now.Add(-30 * time.Second)
+	hits := s.refreshHits[key]
+	next := hits[:0]
+	for _, hit := range hits {
+		if hit.After(windowStart) {
+			next = append(next, hit)
+		}
+	}
+	if len(next) >= 6 {
+		s.refreshHits[key] = next
+		return false
+	}
+	next = append(next, now)
+	s.refreshHits[key] = next
+	return true
 }
 
 func (s *Server) verifyCaptcha(id, answer string) bool {

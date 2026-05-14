@@ -87,6 +87,196 @@ type MedicalRecord struct {
 	UpdatedAt      time.Time              `json:"updatedAt"`
 }
 
+type PatientDiagnosis struct {
+	ID             string    `json:"id"`
+	PatientID      string    `json:"patientId"`
+	VisitID        string    `json:"visitId,omitempty"`
+	DiagnosisCode  string    `json:"diagnosisCode,omitempty"`
+	DiagnosisName  string    `json:"diagnosisName"`
+	DiagnosisType  string    `json:"diagnosisType"`
+	DiagnosedAt    string    `json:"diagnosedAt,omitempty"`
+	DepartmentName string    `json:"departmentName,omitempty"`
+	DoctorName     string    `json:"doctorName,omitempty"`
+	SourceSystem   string    `json:"sourceSystem,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type PatientHistory struct {
+	ID           string    `json:"id"`
+	PatientID    string    `json:"patientId"`
+	HistoryType  string    `json:"historyType"`
+	Title        string    `json:"title"`
+	Content      string    `json:"content,omitempty"`
+	RecordedAt   string    `json:"recordedAt,omitempty"`
+	SourceSystem string    `json:"sourceSystem,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type MedicationOrder struct {
+	ID              string    `json:"id"`
+	PatientID       string    `json:"patientId"`
+	VisitID         string    `json:"visitId,omitempty"`
+	OrderNo         string    `json:"orderNo,omitempty"`
+	PrescriptionNo  string    `json:"prescriptionNo,omitempty"`
+	DrugCode        string    `json:"drugCode,omitempty"`
+	DrugName        string    `json:"drugName"`
+	GenericName     string    `json:"genericName,omitempty"`
+	Specification   string    `json:"specification,omitempty"`
+	Dosage          string    `json:"dosage,omitempty"`
+	DosageUnit      string    `json:"dosageUnit,omitempty"`
+	Frequency       string    `json:"frequency,omitempty"`
+	Route           string    `json:"route,omitempty"`
+	StartAt         string    `json:"startAt,omitempty"`
+	EndAt           string    `json:"endAt,omitempty"`
+	Days            int       `json:"days,omitempty"`
+	Quantity        float64   `json:"quantity,omitempty"`
+	Manufacturer    string    `json:"manufacturer,omitempty"`
+	DoctorName      string    `json:"doctorName,omitempty"`
+	PharmacistName  string    `json:"pharmacistName,omitempty"`
+	Status          string    `json:"status"`
+	AdverseReaction string    `json:"adverseReaction,omitempty"`
+	Compliance      string    `json:"compliance,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+type LabReport struct {
+	ID             string      `json:"id"`
+	PatientID      string      `json:"patientId"`
+	VisitID        string      `json:"visitId,omitempty"`
+	ReportNo       string      `json:"reportNo"`
+	ReportName     string      `json:"reportName"`
+	Specimen       string      `json:"specimen,omitempty"`
+	OrderedAt      string      `json:"orderedAt,omitempty"`
+	ReportedAt     string      `json:"reportedAt,omitempty"`
+	DepartmentName string      `json:"departmentName,omitempty"`
+	DoctorName     string      `json:"doctorName,omitempty"`
+	Status         string      `json:"status"`
+	SourceSystem   string      `json:"sourceSystem,omitempty"`
+	Results        []LabResult `json:"results,omitempty"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
+}
+
+type LabResult struct {
+	ID             string    `json:"id"`
+	ReportID       string    `json:"reportId"`
+	ItemCode       string    `json:"itemCode,omitempty"`
+	ItemName       string    `json:"itemName"`
+	ResultValue    string    `json:"resultValue,omitempty"`
+	Unit           string    `json:"unit,omitempty"`
+	ReferenceRange string    `json:"referenceRange,omitempty"`
+	AbnormalFlag   string    `json:"abnormalFlag,omitempty"`
+	NumericValue   float64   `json:"numericValue,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+type ExamReport struct {
+	ID               string    `json:"id"`
+	PatientID        string    `json:"patientId"`
+	VisitID          string    `json:"visitId,omitempty"`
+	ExamNo           string    `json:"examNo"`
+	ExamType         string    `json:"examType,omitempty"`
+	ExamName         string    `json:"examName"`
+	BodyPart         string    `json:"bodyPart,omitempty"`
+	ReportConclusion string    `json:"reportConclusion,omitempty"`
+	ReportFindings   string    `json:"reportFindings,omitempty"`
+	OrderedAt        string    `json:"orderedAt,omitempty"`
+	ReportedAt       string    `json:"reportedAt,omitempty"`
+	DepartmentName   string    `json:"departmentName,omitempty"`
+	DoctorName       string    `json:"doctorName,omitempty"`
+	SourceSystem     string    `json:"sourceSystem,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+type SurgeryRecord struct {
+	ID             string    `json:"id"`
+	PatientID      string    `json:"patientId"`
+	VisitID        string    `json:"visitId,omitempty"`
+	OperationCode  string    `json:"operationCode,omitempty"`
+	OperationName  string    `json:"operationName"`
+	OperationDate  string    `json:"operationDate,omitempty"`
+	SurgeonName    string    `json:"surgeonName,omitempty"`
+	AnesthesiaType string    `json:"anesthesiaType,omitempty"`
+	OperationLevel string    `json:"operationLevel,omitempty"`
+	WoundGrade     string    `json:"woundGrade,omitempty"`
+	Outcome        string    `json:"outcome,omitempty"`
+	SourceSystem   string    `json:"sourceSystem,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type FollowupRecord struct {
+	ID                string    `json:"id"`
+	PatientID         string    `json:"patientId"`
+	VisitID           string    `json:"visitId,omitempty"`
+	TaskID            string    `json:"taskId,omitempty"`
+	ProjectID         string    `json:"projectId,omitempty"`
+	FollowupType      string    `json:"followupType,omitempty"`
+	Channel           string    `json:"channel,omitempty"`
+	Status            string    `json:"status"`
+	Summary           string    `json:"summary,omitempty"`
+	SatisfactionScore float64   `json:"satisfactionScore,omitempty"`
+	RiskLevel         string    `json:"riskLevel,omitempty"`
+	FollowedAt        string    `json:"followedAt,omitempty"`
+	OperatorName      string    `json:"operatorName,omitempty"`
+	SourceSystem      string    `json:"sourceSystem,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+type InterviewExtractedFact struct {
+	ID          string    `json:"id"`
+	PatientID   string    `json:"patientId"`
+	VisitID     string    `json:"visitId,omitempty"`
+	InterviewID string    `json:"interviewId,omitempty"`
+	FactType    string    `json:"factType"`
+	FactKey     string    `json:"factKey"`
+	FactLabel   string    `json:"factLabel"`
+	FactValue   string    `json:"factValue,omitempty"`
+	Confidence  float64   `json:"confidence,omitempty"`
+	ExtractedAt string    `json:"extractedAt,omitempty"`
+	SourceText  string    `json:"sourceText,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type SatisfactionIndicatorScore struct {
+	ID             string                 `json:"id"`
+	ProjectID      string                 `json:"projectId"`
+	IndicatorID    string                 `json:"indicatorId"`
+	PatientID      string                 `json:"patientId,omitempty"`
+	VisitID        string                 `json:"visitId,omitempty"`
+	DepartmentName string                 `json:"departmentName,omitempty"`
+	DoctorName     string                 `json:"doctorName,omitempty"`
+	NurseName      string                 `json:"nurseName,omitempty"`
+	DiseaseName    string                 `json:"diseaseName,omitempty"`
+	VisitType      string                 `json:"visitType,omitempty"`
+	Score          float64                `json:"score"`
+	SampleCount    int                    `json:"sampleCount"`
+	ScorePeriod    string                 `json:"scorePeriod,omitempty"`
+	Source         map[string]interface{} `json:"source,omitempty"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	UpdatedAt      time.Time              `json:"updatedAt"`
+}
+
+type Patient360 struct {
+	Patient         Patient                      `json:"patient"`
+	Visits          []ClinicalVisit              `json:"visits"`
+	MedicalRecords  []MedicalRecord              `json:"medicalRecords"`
+	Diagnoses       []PatientDiagnosis           `json:"diagnoses"`
+	Histories       []PatientHistory             `json:"histories"`
+	Medications     []MedicationOrder            `json:"medications"`
+	LabReports      []LabReport                  `json:"labReports"`
+	ExamReports     []ExamReport                 `json:"examReports"`
+	Surgeries       []SurgeryRecord              `json:"surgeries"`
+	FollowupRecords []FollowupRecord             `json:"followupRecords"`
+	InterviewFacts  []InterviewExtractedFact     `json:"interviewFacts"`
+	IndicatorScores []SatisfactionIndicatorScore `json:"indicatorScores,omitempty"`
+}
+
 type Dataset struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -453,6 +643,7 @@ type MappedRecord struct {
 
 type Report struct {
 	ID          string         `json:"id"`
+	Type        string         `json:"type,omitempty"`
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Widgets     []ReportWidget `json:"widgets,omitempty"`
@@ -598,6 +789,95 @@ type SurveySubmissionAnswer struct {
 	Answer        interface{} `json:"answer"`
 	Score         *float64    `json:"score,omitempty"`
 	CreatedAt     time.Time   `json:"createdAt"`
+}
+
+type SatisfactionIndicator struct {
+	ID                string    `json:"id"`
+	ProjectID         string    `json:"projectId,omitempty"`
+	TargetType        string    `json:"targetType"`
+	Level             int       `json:"level"`
+	ParentID          string    `json:"parentId,omitempty"`
+	Name              string    `json:"name"`
+	ServiceStage      string    `json:"serviceStage,omitempty"`
+	ServiceNode       string    `json:"serviceNode,omitempty"`
+	QuestionID        string    `json:"questionId,omitempty"`
+	Weight            float64   `json:"weight"`
+	IncludeTotalScore bool      `json:"includeTotalScore"`
+	NationalDimension string    `json:"nationalDimension,omitempty"`
+	IncludeNational   bool      `json:"includeNational"`
+	Enabled           bool      `json:"enabled"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+type SatisfactionIndicatorQuestion struct {
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"projectId,omitempty"`
+	IndicatorID    string    `json:"indicatorId"`
+	FormTemplateID string    `json:"formTemplateId"`
+	QuestionID     string    `json:"questionId"`
+	QuestionLabel  string    `json:"questionLabel,omitempty"`
+	ScoreDirection string    `json:"scoreDirection"`
+	Weight         float64   `json:"weight"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type SatisfactionCleaningRule struct {
+	ID        string                 `json:"id"`
+	ProjectID string                 `json:"projectId,omitempty"`
+	Name      string                 `json:"name"`
+	RuleType  string                 `json:"ruleType"`
+	Enabled   bool                   `json:"enabled"`
+	Config    map[string]interface{} `json:"config,omitempty"`
+	Action    string                 `json:"action"`
+	CreatedAt time.Time              `json:"createdAt"`
+	UpdatedAt time.Time              `json:"updatedAt"`
+}
+
+type SurveySubmissionAuditLog struct {
+	ID           string    `json:"id"`
+	SubmissionID string    `json:"submissionId"`
+	ProjectID    string    `json:"projectId,omitempty"`
+	Action       string    `json:"action"`
+	FromStatus   string    `json:"fromStatus,omitempty"`
+	ToStatus     string    `json:"toStatus,omitempty"`
+	Reason       string    `json:"reason,omitempty"`
+	ActorID      string    `json:"actorId,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type SatisfactionIssue struct {
+	ID                    string    `json:"id"`
+	ProjectID             string    `json:"projectId,omitempty"`
+	SubmissionID          string    `json:"submissionId,omitempty"`
+	IndicatorID           string    `json:"indicatorId,omitempty"`
+	Title                 string    `json:"title"`
+	Source                string    `json:"source"`
+	ResponsibleDepartment string    `json:"responsibleDepartment,omitempty"`
+	ResponsiblePerson     string    `json:"responsiblePerson,omitempty"`
+	Severity              string    `json:"severity"`
+	Suggestion            string    `json:"suggestion,omitempty"`
+	Measure               string    `json:"measure,omitempty"`
+	MaterialURLs          []string  `json:"materialUrls,omitempty"`
+	VerificationResult    string    `json:"verificationResult,omitempty"`
+	Status                string    `json:"status"`
+	DueDate               string    `json:"dueDate,omitempty"`
+	ClosedAt              string    `json:"closedAt,omitempty"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+}
+
+type SatisfactionIssueEvent struct {
+	ID          string    `json:"id"`
+	IssueID     string    `json:"issueId"`
+	Action      string    `json:"action"`
+	FromStatus  string    `json:"fromStatus,omitempty"`
+	ToStatus    string    `json:"toStatus,omitempty"`
+	Content     string    `json:"content,omitempty"`
+	Attachments []string  `json:"attachments,omitempty"`
+	ActorID     string    `json:"actorId,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 type SurveyInterview struct {

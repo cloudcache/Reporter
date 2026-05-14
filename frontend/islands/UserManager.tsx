@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { authedJson, requireSession } from "../lib/auth"
+import { authedJson } from "../lib/auth"
 
 interface User {
   id: string
@@ -36,7 +36,6 @@ function displayRole(roleId: string) {
 }
 
 export function UserManager() {
-  const [token, setToken] = useState("")
   const [users, setUsers] = useState<User[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [selectedId, setSelectedId] = useState("")
@@ -45,13 +44,12 @@ export function UserManager() {
   const [message, setMessage] = useState("正在连接用户 API...")
   const selected = useMemo(() => users.find((user) => user.id === selectedId), [users, selectedId])
 
-  async function authed<T>(path: string, accessToken = token, init?: RequestInit): Promise<T> {
+  async function authed<T>(path: string, init?: RequestInit): Promise<T> {
     return authedJson<T>(path, init)
   }
 
   async function load() {
     try {
-      requireSession()
       const [userData, roleData] = await Promise.all([
         authed<User[]>("/api/v1/users"),
         authed<Role[]>("/api/v1/roles"),
@@ -68,7 +66,7 @@ export function UserManager() {
     try {
       const method = selectedId ? "PUT" : "POST"
       const path = selectedId ? `/api/v1/users/${selectedId}` : "/api/v1/users"
-      const saved = await authed<User>(path, token, {
+      const saved = await authed<User>(path, {
         method,
         body: JSON.stringify({
           username: draft.username,
@@ -91,7 +89,7 @@ export function UserManager() {
     const user = users.find((item) => item.id === id)
     if (!user || !window.confirm(`删除用户「${user.displayName || user.username}」？`)) return
     try {
-      await authed<User>(`/api/v1/users/${id}`, token, { method: "DELETE" })
+      await authed<User>(`/api/v1/users/${id}`, { method: "DELETE" })
       setUsers(users.filter((item) => item.id !== id))
       if (selectedId === id) {
         setSelectedId("")

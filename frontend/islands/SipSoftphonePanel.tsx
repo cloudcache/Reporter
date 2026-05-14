@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { authedFetch } from "../lib/auth"
 
 interface SipEndpoint {
   id: string
@@ -48,8 +49,6 @@ interface Props {
   onMessage: (message: string) => void
 }
 
-const apiBase = "http://127.0.0.1:8080"
-
 export function SipSoftphonePanel({ token, endpoints, calls, recordings, initialTarget, initialPatientId, initialPatientName, lockedPatient, hideActivity, onClose, onCallsChange, onRecordingsChange, onMessage }: Props) {
   const [endpointId, setEndpointId] = useState(endpoints[0]?.id || "")
   const [extension, setExtension] = useState("8001")
@@ -77,9 +76,8 @@ export function SipSoftphonePanel({ token, endpoints, calls, recordings, initial
   }, [initialTarget, initialPatientId])
 
   async function authed<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${apiBase}${path}`, {
+    const response = await authedFetch(path, {
       ...init,
-      credentials: "include",
       headers: {
         ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

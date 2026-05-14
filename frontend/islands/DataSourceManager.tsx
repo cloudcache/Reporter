@@ -1,13 +1,22 @@
 import { useEffect, useMemo, useState } from "react"
-import { apiBase, requireSession } from "../lib/auth"
+import { authedJson } from "../lib/auth"
 
 type Protocol = "mysql" | "postgres" | "http" | "soap" | "xml" | "grpc" | "hl7" | "dicom" | "custom"
-type Tab = "base" | "mapping" | "dictionary" | "payload" | "result"
+type Tab = "base" | "mapping" | "payload" | "result"
 
 interface DictionaryEntry {
   key: string
   label: string
   value: string
+}
+
+interface SystemDictionary {
+  id: string
+  code: string
+  name: string
+  category: string
+  description?: string
+  items: DictionaryEntry[]
 }
 
 interface DictionaryMapping {
@@ -119,14 +128,13 @@ const targetOptions = [
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: "base", label: "基础信息" },
   { id: "mapping", label: "字段映射" },
-  { id: "dictionary", label: "字典" },
   { id: "payload", label: "样例报文" },
   { id: "result", label: "映射结果" },
 ]
 
 export function DataSourceManager() {
-  const [token, setToken] = useState("")
   const [sources, setSources] = useState<DataSource[]>([])
+  const [systemDictionaries, setSystemDictionaries] = useState<SystemDictionary[]>([])
   const [selectedId, setSelectedId] = useState("")
   const [draft, setDraft] = useState<DataSource>(emptySource)
   const [payload, setPayload] = useState(samplePayload.http)
@@ -135,25 +143,21 @@ export function DataSourceManager() {
   const [message, setMessage] = useState("正在连接数据源 API...")
   const [activeTab, setActiveTab] = useState<Tab>("base")
   const selected = useMemo(() => sources.find((source) => source.id === selectedId), [sources, selectedId])
+  const linkedDictionaryNames = useMemo(() => new Set((draft.dictionaries || []).map((item) => item.name)), [draft.dictionaries])
+  const targetChoices = useMemo(() => buildTargetChoices(systemDictionaries), [systemDictionaries])
+  const dictionaryChoices = useMemo(() => buildDictionaryChoices(systemDictionaries, draft.dictionaries || []), [systemDictionaries, draft.dictionaries])
 
-  async function authed<T>(path: string, accessToken = token, init?: RequestInit): Promise<T> {
-    requireSession()
-    const response = await fetch(`${apiBase}${path}`, {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
-    })
-    if (!response.ok) throw new Error(await response.text())
-    return response.json()
+  async function authed<T>(path: string, init?: RequestInit): Promise<T> {
+    return authedJson<T>(path, init)
   }
 
   async function load() {
     try {
-      requireSession()
-      const list = await authed<DataSource[]>("/api/v1/data-sources")
+      const [list, dictionaries] = await Promise.all([
+        authed<DataSource[]>("/api/v1/data-sources"),
+        authed<SystemDictionary[]>("/api/v1/dictionaries"),
+      ])
+      setSystemDictionaries(dictionaries)
       setSources(list)
       if (list[0]) choose(list[0])
       setMessage("")
@@ -173,10 +177,10 @@ export function DataSourceManager() {
 
   async function save() {
     try {
-      const body = JSON.stringify(normalizeSource(draft))
+      const body = JSON.stringify(enrichSourceDictionaries(normalizeSource(draft), systemDictionaries))
       const saved = selectedId
-        ? await authed<DataSource>(`/api/v1/data-sources/${selectedId}`, token, { method: "PUT", body })
-        : await authed<DataSource>("/api/v1/data-sources", token, { method: "POST", body })
+        ? await authed<DataSource>(`/api/v1/data-sources/${selectedId}`, { method: "PUT", body })
+        : await authed<DataSource>("/api/v1/data-sources", { method: "POST", body })
       setSources(selectedId ? sources.map((item) => item.id === selectedId ? saved : item) : [saved, ...sources])
       setSelectedId(saved.id)
       setDraft(normalizeSource(saved))
@@ -189,7 +193,7 @@ export function DataSourceManager() {
   async function remove() {
     if (!selectedId || !selected || !window.confirm(`删除「${selected.name}」？`)) return
     try {
-      await authed(`/api/v1/data-sources/${selectedId}`, token, { method: "DELETE" })
+      await authed(`/api/v1/data-sources/${selectedId}`, { method: "DELETE" })
       const next = sources.filter((source) => source.id !== selectedId)
       setSources(next)
       if (next[0]) choose(next[0])
@@ -205,7 +209,7 @@ export function DataSourceManager() {
 
   async function previewMapping() {
     try {
-      const data = await authed<SyncPreview>(`/api/v1/data-sources/${selectedId}/preview`, token, { method: "POST", body: JSON.stringify({ payload: parsePayload(payload) }) })
+      const data = await authed<SyncPreview>(`/api/v1/data-sources/${selectedId}/preview`, { method: "POST", body: JSON.stringify({ payload: parsePayload(payload) }) })
       setPreview(data)
       setResult(null)
       setActiveTab("result")
@@ -217,7 +221,7 @@ export function DataSourceManager() {
 
   async function sync(dryRun = false) {
     try {
-      const data = await authed<SyncResult>(`/api/v1/data-sources/${selectedId}/sync`, token, { method: "POST", body: JSON.stringify({ payload: parsePayload(payload), dryRun }) })
+      const data = await authed<SyncResult>(`/api/v1/data-sources/${selectedId}/sync`, { method: "POST", body: JSON.stringify({ payload: parsePayload(payload), dryRun }) })
       setResult(data)
       setActiveTab("result")
       setMessage(dryRun ? "已完成试同步" : `同步完成：新增 ${data.created}，更新 ${data.updated}`)
@@ -232,6 +236,14 @@ export function DataSourceManager() {
     setDraft({ ...draft, fieldMapping: mapping })
   }
 
+  function updateMappingDictionary(index: number, dictionaryCode: string) {
+    const mapping = [...(draft.fieldMapping || [])]
+    mapping[index] = { ...mapping[index], dictionary: dictionaryCode || undefined }
+    const dictionary = systemDictionaries.find((item) => item.code === dictionaryCode)
+    const nextDraft = { ...draft, fieldMapping: mapping }
+    setDraft(dictionary ? enrichSourceDictionaries(nextDraft, systemDictionaries) : nextDraft)
+  }
+
   function removeMapping(index: number) {
     setDraft({ ...draft, fieldMapping: (draft.fieldMapping || []).filter((_, itemIndex) => itemIndex !== index) })
   }
@@ -244,6 +256,20 @@ export function DataSourceManager() {
 
   function removeDictionary(index: number) {
     setDraft({ ...draft, dictionaries: (draft.dictionaries || []).filter((_, itemIndex) => itemIndex !== index) })
+  }
+
+  function linkSystemDictionary(dictionary: SystemDictionary) {
+    const next = enrichSourceDictionaries({
+      ...draft,
+      dictionaries: [...(draft.dictionaries || []), systemDictionaryToMapping(dictionary)],
+    }, systemDictionaries)
+    setDraft(next)
+    setMessage(`已关联系统字典：${dictionary.name}`)
+  }
+
+  function addMappingFromField(target: string) {
+    setDraft({ ...draft, fieldMapping: [...(draft.fieldMapping || []), { source: "", target }] })
+    setActiveTab("mapping")
   }
 
   useEffect(() => {
@@ -333,58 +359,66 @@ export function DataSourceManager() {
           )}
 
           {activeTab === "mapping" && (
-            <section className="grid gap-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">字段映射</h3>
-                <button className="rounded-md border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => setDraft({ ...draft, fieldMapping: [...(draft.fieldMapping || []), { source: "", target: "patient.name" }] })}>新增映射</button>
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-line">
-                <table className="w-full min-w-[880px] text-sm">
-                  <thead className="bg-gray-50 text-xs text-muted">
-                    <tr>
-                      <th className="px-3 py-2 text-left">来源路径</th>
-                      <th className="px-3 py-2 text-left">系统字段</th>
-                      <th className="px-3 py-2 text-left">字典</th>
-                      <th className="px-3 py-2 text-left">类型</th>
-                      <th className="px-3 py-2 text-left">必填</th>
-                      <th className="px-3 py-2 text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(draft.fieldMapping || []).map((mapping, index) => (
-                      <tr key={index} className="border-t border-line">
-                        <td className="px-3 py-2"><input className="h-10 w-full rounded-md border border-line px-3 font-mono text-sm" value={mapping.source} onChange={(event) => updateMapping(index, { source: event.target.value })} /></td>
-                        <td className="px-3 py-2">
-                          <input className="h-10 w-full rounded-md border border-line px-3 text-sm" list="data-source-target-fields" value={mapping.target} onChange={(event) => updateMapping(index, { target: event.target.value })} />
-                        </td>
-                        <td className="px-3 py-2"><input className="h-10 w-full rounded-md border border-line px-3 text-sm" value={mapping.dictionary || ""} onChange={(event) => updateMapping(index, { dictionary: event.target.value })} /></td>
-                        <td className="px-3 py-2"><input className="h-10 w-full rounded-md border border-line px-3 text-sm" value={mapping.type || ""} onChange={(event) => updateMapping(index, { type: event.target.value })} /></td>
-                        <td className="px-3 py-2"><input type="checkbox" checked={!!mapping.required} onChange={(event) => updateMapping(index, { required: event.target.checked })} /></td>
-                        <td className="px-3 py-2 text-right"><button className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50" onClick={() => removeMapping(index)}>删除</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <datalist id="data-source-target-fields">{targetOptions.map((target) => <option key={target} value={target} />)}</datalist>
-            </section>
-          )}
-
-          {activeTab === "dictionary" && (
-            <section className="grid max-w-5xl gap-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">字典映射</h3>
-                <button className="rounded-md border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => setDraft({ ...draft, dictionaries: [...(draft.dictionaries || []), { name: "新字典", entries: [] }] })}>新增字典</button>
-              </div>
-              {(draft.dictionaries || []).map((dictionary, index) => (
-                <div key={index} className="grid gap-3 rounded-lg border border-line p-4">
-                  <div className="flex items-center gap-3">
-                    <input className="h-10 min-w-0 flex-1 rounded-md border border-line px-3 text-sm" value={dictionary.name} onChange={(event) => updateDictionary(index, { name: event.target.value })} />
-                    <button className="rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 hover:bg-red-50" onClick={() => removeDictionary(index)}>删除</button>
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="grid min-w-0 gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">字段映射</h3>
+                    <p className="mt-1 text-sm text-muted">左侧来源路径映射到右侧标准字段，值域字典在同一行完成转换绑定。</p>
                   </div>
-                  <textarea className="min-h-36 resize-y rounded-md border border-line px-3 py-2 font-mono text-xs leading-5" value={JSON.stringify(dictionary.entries || [], null, 2)} onChange={(event) => updateDictionary(index, { entries: safeJSON(event.target.value, dictionary.entries || []) as DictionaryEntry[] })} />
+                  <button className="rounded-md border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => setDraft({ ...draft, fieldMapping: [...(draft.fieldMapping || []), { source: "", target: "patient.name" }] })}>新增映射</button>
                 </div>
-              ))}
+                <div className="overflow-x-auto rounded-lg border border-line">
+                  <table className="w-full min-w-[880px] text-sm">
+                    <thead className="bg-gray-50 text-xs text-muted">
+                      <tr>
+                        <th className="px-3 py-2 text-left">来源路径</th>
+                        <th className="px-3 py-2 text-left">标准字段</th>
+                        <th className="px-3 py-2 text-left">值域字典</th>
+                        <th className="px-3 py-2 text-left">类型</th>
+                        <th className="px-3 py-2 text-left">必填</th>
+                        <th className="px-3 py-2 text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(draft.fieldMapping || []).map((mapping, index) => (
+                        <tr key={index} className="border-t border-line">
+                          <td className="px-3 py-2"><input className="h-10 w-full rounded-md border border-line px-3 font-mono text-sm" value={mapping.source} onChange={(event) => updateMapping(index, { source: event.target.value })} /></td>
+                          <td className="px-3 py-2">
+                            <input className="h-10 w-full rounded-md border border-line px-3 text-sm" list="data-source-target-fields" value={mapping.target} onChange={(event) => updateMapping(index, { target: event.target.value })} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select className="h-10 w-full rounded-md border border-line px-3 text-sm" value={mapping.dictionary || ""} onChange={(event) => updateMappingDictionary(index, event.target.value)}>
+                              <option value="">不转换</option>
+                              {dictionaryChoices.map((dictionary) => <option key={dictionary.value} value={dictionary.value}>{dictionary.label}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select className="h-10 w-full rounded-md border border-line px-3 text-sm" value={mapping.type || ""} onChange={(event) => updateMapping(index, { type: event.target.value })}>
+                              <option value="">自动</option>
+                              <option value="string">字符串</option>
+                              <option value="int">整数</option>
+                              <option value="number">数字</option>
+                              <option value="array">数组</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2"><input type="checkbox" checked={!!mapping.required} onChange={(event) => updateMapping(index, { required: event.target.checked })} /></td>
+                          <td className="px-3 py-2 text-right"><button className="rounded-md border border-red-200 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50" onClick={() => removeMapping(index)}>删除</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <datalist id="data-source-target-fields">{targetChoices.map((target) => <option key={target.value} value={target.value}>{target.label}</option>)}</datalist>
+                <div className="rounded-lg border border-line p-3">
+                  <div className="text-sm font-semibold">当前已关联值域字典</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(draft.dictionaries || []).map((dictionary, index) => <button key={`${dictionary.name}-${index}`} className="rounded-md border border-line px-2 py-1 text-xs text-muted hover:border-red-200 hover:text-red-600" onClick={() => removeDictionary(index)}>{dictionary.name} · {dictionary.entries?.length || 0} 项</button>)}
+                    {!(draft.dictionaries || []).length && <span className="text-sm text-muted">暂无。选择映射行里的值域字典后会自动关联。</span>}
+                  </div>
+                </div>
+              </div>
+              <MappingDictionaryPanel systemDictionaries={systemDictionaries} linkedDictionaryNames={linkedDictionaryNames} addMappingFromField={addMappingFromField} linkSystemDictionary={linkSystemDictionary} />
             </section>
           )}
 
@@ -421,6 +455,51 @@ export function DataSourceManager() {
   )
 }
 
+function MappingDictionaryPanel({ systemDictionaries, linkedDictionaryNames, addMappingFromField, linkSystemDictionary }: { systemDictionaries: SystemDictionary[]; linkedDictionaryNames: Set<string>; addMappingFromField: (target: string) => void; linkSystemDictionary: (dictionary: SystemDictionary) => void }) {
+  const fieldDictionaries = systemDictionaries.filter((dictionary) => isFieldDictionary(dictionary.code))
+  const valueDictionaries = systemDictionaries.filter((dictionary) => !isFieldDictionary(dictionary.code))
+  return <aside className="grid content-start gap-3">
+    <div className="rounded-lg border border-line bg-gray-50 p-4">
+      <h3 className="text-sm font-semibold">字段标准</h3>
+      <p className="mt-1 text-sm text-muted">电子病历、病例、就诊、用药字段直接生成映射行。</p>
+      <div className="mt-3 grid max-h-[360px] gap-3 overflow-y-auto pr-1">
+        {fieldDictionaries.map((dictionary) => <div key={dictionary.id} className="rounded-lg border border-line bg-white p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-medium">{dictionary.name}</div>
+            <span className="text-xs text-muted">{dictionary.items.length} 项</span>
+          </div>
+          <div className="mt-2 grid gap-1">
+            {dictionary.items.map((entry) => {
+              const target = targetFromFieldDictionary(dictionary.code, entry.key)
+              return <button key={entry.key} className="rounded-md px-2 py-1 text-left text-xs hover:bg-blue-50 hover:text-primary" onClick={() => target && addMappingFromField(target)}>
+                {entry.label}<span className="ml-1 font-mono text-muted">{target}</span>
+              </button>
+            })}
+          </div>
+        </div>)}
+      </div>
+    </div>
+    <div className="rounded-lg border border-line p-4">
+      <h3 className="text-sm font-semibold">值域字典</h3>
+      <p className="mt-1 text-sm text-muted">绑定后可在映射行选择，用于性别、状态、满意度等编码转换。</p>
+      <div className="mt-3 grid gap-2">
+        {valueDictionaries.map((dictionary) => (
+          <button key={dictionary.id} className={`rounded-lg border p-3 text-left ${linkedDictionaryNames.has(dictionary.code) ? "border-primary bg-blue-50" : "border-line hover:border-primary"}`} onClick={() => linkSystemDictionary(dictionary)}>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="font-medium">{dictionary.name}</div>
+                <div className="mt-1 font-mono text-xs text-muted">{dictionary.code}</div>
+              </div>
+              <span className="rounded bg-gray-100 px-2 py-1 text-xs text-muted">{dictionary.items.length} 项</span>
+            </div>
+          </button>
+        ))}
+        {!valueDictionaries.length && <div className="text-sm text-muted">暂无值域字典。</div>}
+      </div>
+    </div>
+  </aside>
+}
+
 function normalizeSource(source: DataSource): DataSource {
   return {
     ...source,
@@ -428,6 +507,93 @@ function normalizeSource(source: DataSource): DataSource {
     dictionaries: source.dictionaries || [],
     fieldMapping: normalizeMappings(source.fieldMapping || []),
   }
+}
+
+function enrichSourceDictionaries(source: DataSource, systemDictionaries: SystemDictionary[]): DataSource {
+  const next = { ...source, dictionaries: [...(source.dictionaries || [])] }
+  const selectedNames = new Set((next.fieldMapping || []).map((mapping) => mapping.dictionary).filter(Boolean) as string[])
+  for (const dictionary of systemDictionaries) {
+    if (!selectedNames.has(dictionary.code) && !selectedNames.has(dictionary.name) && !next.dictionaries.some((item) => item.name === dictionary.code)) continue
+    const linked = systemDictionaryToMapping(dictionary)
+    const existingIndex = next.dictionaries.findIndex((item) => item.name === dictionary.code || item.name === dictionary.name)
+    if (existingIndex >= 0) next.dictionaries[existingIndex] = linked
+    else next.dictionaries.push(linked)
+  }
+  return next
+}
+
+function systemDictionaryToMapping(dictionary: SystemDictionary): DictionaryMapping {
+  return {
+    name: dictionary.code,
+    keyField: "key",
+    labelField: "label",
+    valueField: "value",
+    entries: dictionary.items || [],
+  }
+}
+
+function buildDictionaryChoices(systemDictionaries: SystemDictionary[], linked: DictionaryMapping[]) {
+  const choices = new Map<string, string>()
+  for (const dictionary of linked) {
+    if (dictionary.name) choices.set(dictionary.name, `${dictionary.name}（当前数据源）`)
+  }
+  for (const dictionary of systemDictionaries) {
+    choices.set(dictionary.code, `${dictionary.name} · ${dictionary.category}`)
+  }
+  return Array.from(choices.entries()).map(([value, label]) => ({ value, label }))
+}
+
+function buildTargetChoices(systemDictionaries: SystemDictionary[]) {
+  const choices = new Map<string, string>()
+  for (const target of targetOptions) choices.set(target, target)
+  for (const dictionary of systemDictionaries) {
+    for (const entry of dictionary.items || []) {
+      const target = targetFromFieldDictionary(dictionary.code, entry.key)
+      if (target) choices.set(target, `${target} · ${dictionary.name} / ${entry.label}`)
+    }
+  }
+  return Array.from(choices.entries()).map(([value, label]) => ({ value, label }))
+}
+
+function targetFromFieldDictionary(code: string, key: string) {
+  const overrides: Record<string, Record<string, string>> = {
+    emr_common_fields: {
+      record_title: "record.title",
+      doctor_advice: "record.doctorAdvice",
+      record_doctor: "record.recordDoctor",
+      source_system: "record.sourceSystem",
+    },
+    case_common_fields: {
+      patient_no: "patient.patientNo",
+      patient_name: "patient.name",
+      id_card_no: "patient.idCardNo",
+      phone: "patient.phone",
+      primary_diagnosis_code: "patient.diagnosisCode",
+      primary_diagnosis_name: "patient.diagnosis",
+    },
+    visit_common_fields: {
+      outpatient_no: "visit.outpatientNo",
+      inpatient_no: "visit.inpatientNo",
+      admission_no: "visit.admissionNo",
+      ward_name: "visit.ward",
+      responsible_nurse: "visit.responsibleNurse",
+      discharge_disposition: "visit.dischargeDisposition",
+    },
+  }
+  if (overrides[code]?.[key]) return overrides[code][key]
+  if (code === "emr_common_fields") return `record.${camelCase(key)}`
+  if (code === "case_common_fields") return `case.${camelCase(key)}`
+  if (code === "visit_common_fields") return `visit.${camelCase(key)}`
+  if (code === "medication_common_fields") return `medication.${camelCase(key)}`
+  return ""
+}
+
+function isFieldDictionary(code: string) {
+  return ["emr_common_fields", "case_common_fields", "visit_common_fields", "medication_common_fields"].includes(code)
+}
+
+function camelCase(value: string) {
+  return value.replace(/_([a-z])/g, (_, char: string) => char.toUpperCase())
 }
 
 function normalizeMappings(mappings: FieldMapping[]): FieldMapping[] {

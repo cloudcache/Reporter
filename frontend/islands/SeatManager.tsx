@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { authedJson, requireSession } from "../lib/auth"
+import { authedJson } from "../lib/auth"
 
 interface Seat {
   id: string
@@ -42,7 +42,6 @@ function statusLabel(status: string) {
 }
 
 export function SeatManager() {
-  const [token, setToken] = useState("")
   const [message, setMessage] = useState("正在连接坐席 API...")
   const [seats, setSeats] = useState<Seat[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -50,13 +49,12 @@ export function SeatManager() {
   const [draft, setDraft] = useState<Seat>(emptySeat)
   const [view, setView] = useState<"list" | "form">("list")
 
-  async function authed<T>(path: string, accessToken = token, init?: RequestInit): Promise<T> {
+  async function authed<T>(path: string, init?: RequestInit): Promise<T> {
     return authedJson<T>(path, init)
   }
 
   async function load() {
     try {
-      requireSession()
       const [seatData, userData] = await Promise.all([
         authed<Seat[]>("/api/v1/call-center/seats"),
         authed<User[]>("/api/v1/users"),
@@ -73,7 +71,7 @@ export function SeatManager() {
     try {
       const method = selectedId ? "PUT" : "POST"
       const path = selectedId ? `/api/v1/call-center/seats/${selectedId}` : "/api/v1/call-center/seats"
-      const saved = await authed<Seat>(path, token, { method, body: JSON.stringify(draft) })
+      const saved = await authed<Seat>(path, { method, body: JSON.stringify(draft) })
       setSeats(selectedId ? seats.map((seat) => seat.id === selectedId ? saved : seat) : [saved, ...seats])
       setSelectedId(saved.id)
       setDraft(saved)
@@ -88,7 +86,7 @@ export function SeatManager() {
     const seat = seats.find((item) => item.id === id)
     if (!seat || !window.confirm(`删除分机「${seat.name}」？`)) return
     try {
-      await authed<Seat>(`/api/v1/call-center/seats/${id}`, token, { method: "DELETE" })
+      await authed<Seat>(`/api/v1/call-center/seats/${id}`, { method: "DELETE" })
       setSeats(seats.filter((item) => item.id !== id))
       if (selectedId === id) {
         setSelectedId("")

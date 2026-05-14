@@ -111,6 +111,211 @@ CREATE TABLE medical_records (
   CONSTRAINT fk_medical_records_visit FOREIGN KEY (visit_id) REFERENCES clinical_visits(id)
 );
 
+CREATE TABLE patient_diagnoses (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  diagnosis_code VARCHAR(80) NULL,
+  diagnosis_name VARCHAR(180) NOT NULL,
+  diagnosis_type VARCHAR(60) NOT NULL DEFAULT 'primary',
+  diagnosed_at DATETIME NULL,
+  department_name VARCHAR(120) NULL,
+  doctor_name VARCHAR(120) NULL,
+  source_system VARCHAR(80) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_patient_diagnoses_patient (patient_id),
+  INDEX idx_patient_diagnoses_visit (visit_id),
+  INDEX idx_patient_diagnoses_code (diagnosis_code)
+);
+
+CREATE TABLE patient_histories (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  history_type VARCHAR(60) NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  content TEXT NULL,
+  recorded_at DATETIME NULL,
+  source_system VARCHAR(80) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_patient_histories_patient (patient_id),
+  INDEX idx_patient_histories_type (history_type)
+);
+
+CREATE TABLE medication_orders (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  order_no VARCHAR(120) NULL,
+  prescription_no VARCHAR(120) NULL,
+  drug_code VARCHAR(80) NULL,
+  drug_name VARCHAR(180) NOT NULL,
+  generic_name VARCHAR(180) NULL,
+  specification VARCHAR(180) NULL,
+  dosage VARCHAR(80) NULL,
+  dosage_unit VARCHAR(40) NULL,
+  frequency VARCHAR(80) NULL,
+  route VARCHAR(80) NULL,
+  start_at DATETIME NULL,
+  end_at DATETIME NULL,
+  days INT NULL,
+  quantity DECIMAL(10,2) NULL,
+  manufacturer VARCHAR(180) NULL,
+  doctor_name VARCHAR(120) NULL,
+  pharmacist_name VARCHAR(120) NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'active',
+  adverse_reaction TEXT NULL,
+  compliance VARCHAR(60) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_medication_orders_patient (patient_id),
+  INDEX idx_medication_orders_visit (visit_id),
+  INDEX idx_medication_orders_drug (drug_code)
+);
+
+CREATE TABLE lab_reports (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  report_no VARCHAR(120) NOT NULL,
+  report_name VARCHAR(180) NOT NULL,
+  specimen VARCHAR(80) NULL,
+  ordered_at DATETIME NULL,
+  reported_at DATETIME NULL,
+  department_name VARCHAR(120) NULL,
+  doctor_name VARCHAR(120) NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'reported',
+  source_system VARCHAR(80) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_lab_report_no (report_no),
+  INDEX idx_lab_reports_patient (patient_id),
+  INDEX idx_lab_reports_visit (visit_id)
+);
+
+CREATE TABLE lab_results (
+  id CHAR(36) PRIMARY KEY,
+  report_id CHAR(36) NOT NULL,
+  item_code VARCHAR(80) NULL,
+  item_name VARCHAR(180) NOT NULL,
+  result_value VARCHAR(120) NULL,
+  unit VARCHAR(60) NULL,
+  reference_range VARCHAR(120) NULL,
+  abnormal_flag VARCHAR(40) NULL,
+  numeric_value DECIMAL(12,4) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_lab_results_report (report_id),
+  INDEX idx_lab_results_item (item_code),
+  INDEX idx_lab_results_abnormal (abnormal_flag)
+);
+
+CREATE TABLE exam_reports (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  exam_no VARCHAR(120) NOT NULL,
+  exam_type VARCHAR(80) NULL,
+  exam_name VARCHAR(180) NOT NULL,
+  body_part VARCHAR(120) NULL,
+  report_conclusion TEXT NULL,
+  report_findings TEXT NULL,
+  ordered_at DATETIME NULL,
+  reported_at DATETIME NULL,
+  department_name VARCHAR(120) NULL,
+  doctor_name VARCHAR(120) NULL,
+  source_system VARCHAR(80) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_exam_report_no (exam_no),
+  INDEX idx_exam_reports_patient (patient_id),
+  INDEX idx_exam_reports_visit (visit_id)
+);
+
+CREATE TABLE surgery_records (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  operation_code VARCHAR(80) NULL,
+  operation_name VARCHAR(180) NOT NULL,
+  operation_date DATETIME NULL,
+  surgeon_name VARCHAR(120) NULL,
+  anesthesia_type VARCHAR(80) NULL,
+  operation_level VARCHAR(60) NULL,
+  wound_grade VARCHAR(60) NULL,
+  outcome VARCHAR(120) NULL,
+  source_system VARCHAR(80) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_surgery_records_patient (patient_id),
+  INDEX idx_surgery_records_visit (visit_id),
+  INDEX idx_surgery_records_operation (operation_code)
+);
+
+CREATE TABLE followup_records (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  task_id VARCHAR(80) NULL,
+  project_id VARCHAR(80) NULL,
+  followup_type VARCHAR(80) NULL,
+  channel VARCHAR(40) NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'completed',
+  summary TEXT NULL,
+  satisfaction_score DECIMAL(5,2) NULL,
+  risk_level VARCHAR(40) NULL,
+  followed_at DATETIME NULL,
+  operator_name VARCHAR(120) NULL,
+  source_system VARCHAR(80) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_followup_records_patient (patient_id),
+  INDEX idx_followup_records_task (task_id),
+  INDEX idx_followup_records_project (project_id)
+);
+
+CREATE TABLE interview_extracted_facts (
+  id CHAR(36) PRIMARY KEY,
+  patient_id CHAR(36) NOT NULL,
+  visit_id CHAR(36) NULL,
+  interview_id CHAR(36) NULL,
+  fact_type VARCHAR(80) NOT NULL,
+  fact_key VARCHAR(120) NOT NULL,
+  fact_label VARCHAR(180) NOT NULL,
+  fact_value TEXT NULL,
+  confidence DECIMAL(5,4) NULL,
+  extracted_at DATETIME NULL,
+  source_text TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_interview_facts_patient (patient_id),
+  INDEX idx_interview_facts_key (fact_key),
+  INDEX idx_interview_facts_interview (interview_id)
+);
+
+CREATE TABLE satisfaction_indicator_scores (
+  id CHAR(36) PRIMARY KEY,
+  project_id VARCHAR(80) NOT NULL,
+  indicator_id CHAR(36) NOT NULL,
+  patient_id CHAR(36) NULL,
+  visit_id CHAR(36) NULL,
+  department_name VARCHAR(120) NULL,
+  doctor_name VARCHAR(120) NULL,
+  nurse_name VARCHAR(120) NULL,
+  disease_name VARCHAR(180) NULL,
+  visit_type VARCHAR(60) NULL,
+  score DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sample_count INT NOT NULL DEFAULT 0,
+  score_period DATE NULL,
+  source_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_satisfaction_scores_project (project_id),
+  INDEX idx_satisfaction_scores_indicator (indicator_id),
+  INDEX idx_satisfaction_scores_patient (patient_id),
+  INDEX idx_satisfaction_scores_department (department_name),
+  INDEX idx_satisfaction_scores_period (score_period)
+);
+
 CREATE TABLE datasets (
   id CHAR(36) PRIMARY KEY,
   name VARCHAR(180) NOT NULL,
@@ -143,6 +348,18 @@ CREATE TABLE dictionaries (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+INSERT INTO dictionaries (id, code, name, category, description, items_json)
+VALUES
+  ('DICT-EMR-FIELDS', 'emr_common_fields', '电子病历常用字段', '电子病历', '门诊、住院、专科病历同步和表单映射常用字段', CAST('[{"key":"record_no","label":"病历号","value":"record_no"},{"key":"record_type","label":"病历类型","value":"record_type"},{"key":"record_title","label":"病历标题","value":"record_title"},{"key":"chief_complaint","label":"主诉","value":"chief_complaint"},{"key":"present_illness","label":"现病史","value":"present_illness"},{"key":"past_history","label":"既往史","value":"past_history"},{"key":"personal_history","label":"个人史","value":"personal_history"},{"key":"allergy_history","label":"过敏史","value":"allergy_history"},{"key":"physical_exam","label":"体格检查","value":"physical_exam"},{"key":"specialist_exam","label":"专科检查","value":"specialist_exam"},{"key":"auxiliary_exam","label":"辅助检查","value":"auxiliary_exam"},{"key":"diagnosis_code","label":"诊断编码","value":"diagnosis_code"},{"key":"diagnosis_name","label":"诊断名称","value":"diagnosis_name"},{"key":"treatment_plan","label":"诊疗计划","value":"treatment_plan"},{"key":"doctor_advice","label":"医嘱","value":"doctor_advice"},{"key":"recorded_at","label":"记录时间","value":"recorded_at"},{"key":"record_doctor","label":"记录医生","value":"record_doctor"},{"key":"department_code","label":"科室编码","value":"department_code"},{"key":"department_name","label":"科室名称","value":"department_name"},{"key":"source_system","label":"来源系统","value":"source_system"}]' AS JSON)),
+  ('DICT-CASE-FIELDS', 'case_common_fields', '病例常用字段', '病例管理', '病例建档、科研队列、病案首页和随访筛选常用字段', CAST('[{"key":"case_no","label":"病例号","value":"case_no"},{"key":"patient_no","label":"档案号","value":"patient_no"},{"key":"patient_name","label":"患者姓名","value":"patient_name"},{"key":"gender","label":"性别","value":"gender"},{"key":"age","label":"年龄","value":"age"},{"key":"id_card_no","label":"身份证号","value":"id_card_no"},{"key":"phone","label":"联系电话","value":"phone"},{"key":"case_source","label":"病例来源","value":"case_source"},{"key":"disease_code","label":"病种编码","value":"disease_code"},{"key":"disease_name","label":"病种名称","value":"disease_name"},{"key":"primary_diagnosis_code","label":"主要诊断编码","value":"primary_diagnosis_code"},{"key":"primary_diagnosis_name","label":"主要诊断名称","value":"primary_diagnosis_name"},{"key":"tumor_stage","label":"肿瘤分期","value":"tumor_stage"},{"key":"pathology_no","label":"病理号","value":"pathology_no"},{"key":"pathology_diagnosis","label":"病理诊断","value":"pathology_diagnosis"},{"key":"operation_name","label":"手术名称","value":"operation_name"},{"key":"operation_date","label":"手术日期","value":"operation_date"},{"key":"discharge_status","label":"出院情况","value":"discharge_status"},{"key":"followup_flag","label":"随访标识","value":"followup_flag"},{"key":"case_created_at","label":"建档时间","value":"case_created_at"}]' AS JSON)),
+  ('DICT-VISIT-FIELDS', 'visit_common_fields', '就诊常用字段', '就诊信息', '门诊、急诊、住院、出院记录同步常用字段', CAST('[{"key":"visit_no","label":"就诊号","value":"visit_no"},{"key":"visit_type","label":"就诊类型","value":"visit_type"},{"key":"outpatient_no","label":"门诊号","value":"outpatient_no"},{"key":"inpatient_no","label":"住院号","value":"inpatient_no"},{"key":"admission_no","label":"入院登记号","value":"admission_no"},{"key":"visit_at","label":"就诊时间","value":"visit_at"},{"key":"admission_at","label":"入院时间","value":"admission_at"},{"key":"discharge_at","label":"出院时间","value":"discharge_at"},{"key":"department_code","label":"就诊科室编码","value":"department_code"},{"key":"department_name","label":"就诊科室","value":"department_name"},{"key":"ward_name","label":"病区","value":"ward_name"},{"key":"bed_no","label":"床号","value":"bed_no"},{"key":"attending_doctor","label":"主治医生","value":"attending_doctor"},{"key":"responsible_nurse","label":"责任护士","value":"responsible_nurse"},{"key":"diagnosis_code","label":"就诊诊断编码","value":"diagnosis_code"},{"key":"diagnosis_name","label":"就诊诊断","value":"diagnosis_name"},{"key":"visit_status","label":"就诊状态","value":"visit_status"},{"key":"discharge_disposition","label":"离院方式","value":"discharge_disposition"},{"key":"total_fee","label":"总费用","value":"total_fee"},{"key":"insurance_type","label":"医保类型","value":"insurance_type"}]' AS JSON)),
+  ('DICT-MEDICATION-FIELDS', 'medication_common_fields', '用药常用字段', '用药信息', '处方、医嘱、用药随访和不良反应采集常用字段', CAST('[{"key":"order_no","label":"医嘱号","value":"order_no"},{"key":"prescription_no","label":"处方号","value":"prescription_no"},{"key":"drug_code","label":"药品编码","value":"drug_code"},{"key":"drug_name","label":"药品名称","value":"drug_name"},{"key":"generic_name","label":"通用名","value":"generic_name"},{"key":"specification","label":"规格","value":"specification"},{"key":"dosage","label":"单次剂量","value":"dosage"},{"key":"dosage_unit","label":"剂量单位","value":"dosage_unit"},{"key":"frequency","label":"用药频次","value":"frequency"},{"key":"route","label":"给药途径","value":"route"},{"key":"start_at","label":"开始时间","value":"start_at"},{"key":"end_at","label":"结束时间","value":"end_at"},{"key":"days","label":"用药天数","value":"days"},{"key":"quantity","label":"数量","value":"quantity"},{"key":"manufacturer","label":"生产厂家","value":"manufacturer"},{"key":"doctor_name","label":"开立医生","value":"doctor_name"},{"key":"pharmacist_name","label":"审核药师","value":"pharmacist_name"},{"key":"medication_status","label":"用药状态","value":"medication_status"},{"key":"adverse_reaction","label":"不良反应","value":"adverse_reaction"},{"key":"compliance","label":"用药依从性","value":"compliance"}]' AS JSON))
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name),
+  category = VALUES(category),
+  description = VALUES(description),
+  items_json = VALUES(items_json);
 
 CREATE TABLE forms (
   id CHAR(36) PRIMARY KEY,
@@ -433,8 +650,113 @@ CREATE TABLE survey_submission_answers (
   CONSTRAINT fk_submission_answers_submission FOREIGN KEY (submission_id) REFERENCES survey_submissions(id)
 );
 
+CREATE TABLE satisfaction_indicators (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NULL,
+  target_type VARCHAR(40) NOT NULL DEFAULT 'project',
+  level_no INT NOT NULL DEFAULT 1,
+  parent_id CHAR(36) NULL,
+  name VARCHAR(180) NOT NULL,
+  service_stage VARCHAR(120) NULL,
+  service_node VARCHAR(120) NULL,
+  question_id VARCHAR(120) NULL,
+  weight DECIMAL(8,4) NOT NULL DEFAULT 1.0000,
+  include_total_score BOOLEAN NOT NULL DEFAULT TRUE,
+  national_dimension VARCHAR(120) NULL,
+  include_national BOOLEAN NOT NULL DEFAULT FALSE,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_satisfaction_indicators_project (project_id),
+  INDEX idx_satisfaction_indicators_question (question_id),
+  INDEX idx_satisfaction_indicators_parent (parent_id)
+);
+
+CREATE TABLE satisfaction_issues (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NOT NULL,
+  submission_id CHAR(36) NULL,
+  indicator_id CHAR(36) NULL,
+  title VARCHAR(220) NOT NULL,
+  source VARCHAR(80) NOT NULL DEFAULT 'manual',
+  responsible_department VARCHAR(120) NULL,
+  responsible_person VARCHAR(120) NULL,
+  severity VARCHAR(30) NOT NULL DEFAULT 'medium',
+  suggestion TEXT NULL,
+  measure TEXT NULL,
+  material_urls JSON NULL,
+  verification_result TEXT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'open',
+  due_date DATE NULL,
+  closed_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_satisfaction_issues_project (project_id),
+  INDEX idx_satisfaction_issues_status (status),
+  INDEX idx_satisfaction_issues_submission (submission_id)
+);
+
+CREATE TABLE satisfaction_indicator_questions (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NULL,
+  indicator_id CHAR(36) NOT NULL,
+  form_template_id VARCHAR(120) NOT NULL,
+  question_id VARCHAR(120) NOT NULL,
+  question_label VARCHAR(255) NULL,
+  score_direction VARCHAR(40) NOT NULL DEFAULT 'positive',
+  weight DECIMAL(10,2) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_indicator_question (project_id, form_template_id, question_id),
+  INDEX idx_indicator_questions_indicator (indicator_id),
+  INDEX idx_indicator_questions_project (project_id)
+);
+
+CREATE TABLE satisfaction_cleaning_rules (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NULL,
+  name VARCHAR(180) NOT NULL,
+  rule_type VARCHAR(80) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  config_json JSON NULL,
+  action VARCHAR(40) NOT NULL DEFAULT 'mark_suspicious',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_cleaning_rules_project (project_id),
+  INDEX idx_cleaning_rules_type (rule_type)
+);
+
+CREATE TABLE survey_submission_audit_logs (
+  id CHAR(36) PRIMARY KEY,
+  submission_id CHAR(36) NOT NULL,
+  project_id CHAR(36) NULL,
+  action VARCHAR(80) NOT NULL,
+  from_status VARCHAR(40) NULL,
+  to_status VARCHAR(40) NULL,
+  reason VARCHAR(255) NULL,
+  actor_id CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_submission_audit_submission (submission_id),
+  INDEX idx_submission_audit_project (project_id)
+);
+
+CREATE TABLE satisfaction_issue_events (
+  id CHAR(36) PRIMARY KEY,
+  issue_id CHAR(36) NOT NULL,
+  action VARCHAR(80) NOT NULL,
+  from_status VARCHAR(40) NULL,
+  to_status VARCHAR(40) NULL,
+  content TEXT NULL,
+  attachments_json JSON NULL,
+  actor_id CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_issue_events_issue (issue_id),
+  INDEX idx_issue_events_action (action)
+);
+
 CREATE TABLE reports (
   id CHAR(36) PRIMARY KEY,
+  report_type VARCHAR(60) NOT NULL DEFAULT 'custom',
   name VARCHAR(180) NOT NULL,
   description TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

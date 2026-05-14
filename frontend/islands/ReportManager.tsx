@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { ReportChart } from "./ReportChart"
 import { ResultsTable } from "./ResultsTable"
-import { apiBase, requireSession } from "../lib/auth"
+import { authedJson } from "../lib/auth"
 
 type Row = Record<string, string | number>
 
@@ -15,6 +15,7 @@ interface ReportWidget {
 
 interface Report {
   id: string
+  type?: string
   name: string
   description: string
   widgets?: ReportWidget[]
@@ -27,6 +28,7 @@ interface QueryResult {
 }
 
 const emptyReport: Report = { id: "", name: "", description: "", widgets: [] }
+const reportTypeLabels: Record<string, string> = { satisfaction: "满意度分析", complaint: "评价投诉分析", followup: "随访分析", custom: "自定义报表" }
 
 export function ReportManager() {
   const [reports, setReports] = useState<Report[]>([])
@@ -37,32 +39,18 @@ export function ReportManager() {
   const selected = useMemo(() => reports.find((report) => report.id === selectedId), [reports, selectedId])
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
-    requireSession()
-    const response = await fetch(`${apiBase}${path}`, {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
-    })
-    if (!response.ok) throw new Error(await response.text())
-    return response.json()
+    return authedJson<T>(path, init)
   }
 
   async function loginAndLoad() {
     try {
-      requireSession()
-      const list = await fetch(`${apiBase}/api/v1/reports`, {
-        credentials: "include",
-      })
-      if (!list.ok) throw new Error(await list.text())
-      const reports = await list.json() as Report[]
-      setReports(reports)
-      if (reports[0]) {
-        setSelectedId(reports[0].id)
-        setDraft(reports[0])
-        await loadQuery(reports[0].id)
+      const nextReports = await authedJson<Report[]>("/api/v1/reports")
+      setReports(nextReports)
+      const preferred = nextReports.find((item) => item.type === "satisfaction") || nextReports[0]
+      if (preferred) {
+        setSelectedId(preferred.id)
+        setDraft(preferred)
+        await loadQuery(preferred.id)
       }
       setMessage("")
     } catch (error) {
@@ -71,15 +59,10 @@ export function ReportManager() {
   }
 
   async function loadQuery(reportId: string) {
-    requireSession()
-    const response = await fetch(`${apiBase}/api/v1/reports/${reportId}/query`, {
+    setQuery(await authedJson<QueryResult>(`/api/v1/reports/${reportId}/query`, {
       method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
       body: "{}",
-    })
-    if (!response.ok) throw new Error(await response.text())
-    setQuery(await response.json())
+    }))
   }
 
   async function selectReport(report: Report) {
@@ -116,7 +99,7 @@ export function ReportManager() {
     try {
       const widget = await api<ReportWidget>(`/api/v1/reports/${selectedId}/widgets`, {
         method: "POST",
-        body: JSON.stringify({ type, title: type === "bar" ? "新图表" : "新明细表", dataSource: "survey-dict" }),
+        body: JSON.stringify({ type, title: type === "bar" ? "新图表" : "新明细表", dataSource: draft.type === "complaint" ? "evaluation_complaints" : draft.type === "satisfaction" ? "survey_submissions" : "followup_records" }),
       })
       const next = { ...draft, widgets: [...(draft.widgets || []), widget] }
       setDraft(next)
@@ -138,15 +121,19 @@ export function ReportManager() {
     <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
       <aside className="rounded-lg border border-line bg-surface p-4">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">报表列表</h2>
+          <h2 className="text-sm font-semibold">分析报表</h2>
           <button className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-primary" onClick={() => { setSelectedId(""); setDraft(emptyReport); setQuery({ dimensions: [], measures: [], rows: [] }) }}>
             新建
           </button>
+        </div>
+        <div className="mb-3 rounded-lg bg-gray-50 p-3 text-xs leading-5 text-muted">
+          满意度分析、评价投诉分析和随访分析在这里并列管理，数据从各业务表实时聚合。
         </div>
         <div className="grid gap-2">
           {reports.map((report) => (
             <button key={report.id} className={`rounded-lg border px-3 py-3 text-left ${report.id === selectedId ? "border-primary bg-blue-50" : "border-line"}`} onClick={() => selectReport(report)}>
               <span className="block text-sm font-medium">{report.name}</span>
+              <span className="mt-1 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs text-muted">{reportTypeLabels[report.type || "custom"] || report.type}</span>
               <span className="mt-1 block text-xs text-muted">{report.description}</span>
             </button>
           ))}
@@ -155,7 +142,10 @@ export function ReportManager() {
 
       <section className="grid gap-5">
         <div className="rounded-lg border border-line bg-surface p-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_1.5fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[180px_1fr_1.5fr_auto]">
+            <select className="rounded-lg border border-line px-3 py-2 text-sm" value={draft.type || "custom"} onChange={(event) => setDraft({ ...draft, type: event.target.value })}>
+              {Object.entries(reportTypeLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
             <input className="rounded-lg border border-line px-3 py-2 text-sm" placeholder="报表名称" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
             <input className="rounded-lg border border-line px-3 py-2 text-sm" placeholder="描述" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
             <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white" onClick={save}>保存</button>

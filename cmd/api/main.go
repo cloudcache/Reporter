@@ -39,6 +39,12 @@ func main() {
 		if err := appStore.EnsureSurveyChannelTables(ctx); err != nil {
 			log.Warn().Err(err).Msg("database survey channel tables ensure skipped")
 		}
+		if err := appStore.EnsureClinicalFactTables(ctx); err != nil {
+			log.Warn().Err(err).Msg("database clinical fact tables ensure skipped")
+		}
+		if err := appStore.EnsureReportTables(ctx); err != nil {
+			log.Warn().Err(err).Msg("database report tables ensure skipped")
+		}
 		cancel()
 	}
 

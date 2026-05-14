@@ -1,0 +1,10 @@
+---
+import AppLayout from "../layouts/AppLayout.astro"
+import PageHeader from "../components/PageHeader.astro"
+import { ScheduleManager } from "../islands/ScheduleManager"
+---
+
+<AppLayout>
+  <PageHeader title="日历日程" description="汇总随访任务、复诊安排和整改提醒，形成全局待办提醒中心" />
+  <ScheduleManager client:load />
+</AppLayout>

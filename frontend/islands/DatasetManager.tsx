@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { apiBase, requireSession } from "../lib/auth"
+import { authedJson } from "../lib/auth"
 
 interface Dataset {
   id: string
@@ -36,28 +36,9 @@ export function DatasetManager() {
   const [message, setMessage] = useState("正在连接数据集 API...")
   const selected = useMemo(() => datasets.find((dataset) => dataset.id === selectedId), [datasets, selectedId])
 
-  async function api<T>(path: string, init?: RequestInit): Promise<T> {
-    requireSession()
-    const response = await fetch(`${apiBase}${path}`, {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
-    })
-    if (!response.ok) throw new Error(await response.text())
-    return response.json()
-  }
-
   async function loginAndLoad() {
     try {
-      requireSession()
-      const list = await fetch(`${apiBase}/api/v1/datasets`, {
-        credentials: "include",
-      })
-      if (!list.ok) throw new Error(await list.text())
-      setDatasets(await list.json())
+      setDatasets(await authedJson<Dataset[]>("/api/v1/datasets"))
       setMessage("")
     } catch (error) {
       setMessage(`数据集 API 未连接：${error instanceof Error ? error.message : "未知错误"}`)
@@ -66,7 +47,7 @@ export function DatasetManager() {
 
   async function search() {
     try {
-      setDatasets(await api<Dataset[]>(`/api/v1/datasets?q=${encodeURIComponent(keyword)}`))
+      setDatasets(await authedJson<Dataset[]>(`/api/v1/datasets?q=${encodeURIComponent(keyword)}`))
       setMessage("")
     } catch (error) {
       setMessage(`搜索失败：${error instanceof Error ? error.message : "未知错误"}`)
@@ -77,7 +58,7 @@ export function DatasetManager() {
     try {
       const method = selectedId ? "PUT" : "POST"
       const path = selectedId ? `/api/v1/datasets/${selectedId}` : "/api/v1/datasets"
-      const dataset = await api<Dataset>(path, { method, body: JSON.stringify(draft) })
+      const dataset = await authedJson<Dataset>(path, { method, body: JSON.stringify(draft) })
       if (selectedId) {
         setDatasets(datasets.map((item) => item.id === selectedId ? dataset : item))
       } else {
@@ -96,7 +77,7 @@ export function DatasetManager() {
     const dataset = datasets.find((item) => item.id === id)
     if (!dataset || !window.confirm(`删除数据集「${dataset.name}」？`)) return
     try {
-      await api<Dataset>(`/api/v1/datasets/${id}`, { method: "DELETE" })
+      await authedJson<Dataset>(`/api/v1/datasets/${id}`, { method: "DELETE" })
       setDatasets(datasets.filter((item) => item.id !== id))
       if (selectedId === id) {
         setSelectedId("")

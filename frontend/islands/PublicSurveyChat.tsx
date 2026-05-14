@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { publicApiUrl, publicFetch, publicJson } from "../lib/auth"
 
 interface OptionItem { label: string; value: string }
 interface ComponentItem {
@@ -19,8 +20,6 @@ interface SurveyPayload {
   requiresVerification?: boolean
 }
 interface VerificationPayload { verified: boolean; patient?: { id: string; name: string; patientNo: string; phone: string }; visit?: { id: string; visitNo: string; departmentName?: string; diagnosisName?: string }; values?: Record<string, unknown> }
-
-const apiBase = "http://127.0.0.1:8080"
 
 export function PublicSurveyChat() {
   const [survey, setSurvey] = useState<SurveyPayload | null>(null)
@@ -47,11 +46,7 @@ export function PublicSurveyChat() {
       return
     }
 
-    fetch(`${apiBase}/api/v1/public/survey/${token}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("调查链接无效或已过期")
-        return res.json()
-      })
+    publicJson<SurveyPayload>(`/api/v1/public/survey/${token}`)
       .then((data: SurveyPayload) => {
         setSurvey(data)
         if (data.requiresVerification) {
@@ -73,15 +68,14 @@ export function PublicSurveyChat() {
       setMessage("")
       return
     }
-    fetch(`${apiBase}/api/v1/public/survey/${token}/interviews`, {
+    publicFetch(`/api/v1/public/survey/${token}/interviews`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ patientId }),
     })
       .then((res) => {
         if (!res.ok) throw new Error("访谈会话创建失败")
         sourceRef.current?.close()
-        sourceRef.current = new EventSource(`${apiBase}/api/v1/public/survey/${token}/events`)
+        sourceRef.current = new EventSource(publicApiUrl(`/api/v1/public/survey/${token}/events`))
         sourceRef.current.addEventListener("form_component", (event) => {
           const component = JSON.parse((event as MessageEvent).data) as ComponentItem
           setMessage("")
@@ -112,13 +106,10 @@ export function PublicSurveyChat() {
     }
     try {
       setMessage("正在核验身份并拉取就诊信息...")
-      const response = await fetch(`${apiBase}/api/v1/public/survey/${token}/verify`, {
+      const data = await publicJson<VerificationPayload>(`/api/v1/public/survey/${token}/verify`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(verification),
       })
-      if (!response.ok) throw new Error("未匹配到患者，请核对就诊号和手机号")
-      const data = await response.json() as VerificationPayload
       setVerified(true)
       setVerifiedPatient(data)
       setAnswers((current) => ({ ...(data.values || {}), ...current }))
@@ -140,9 +131,8 @@ export function PublicSurveyChat() {
     const token = new URLSearchParams(window.location.search).get("token") || ""
     try {
       setMessage("正在提交调查结果...")
-      const response = await fetch(`${apiBase}/api/v1/public/survey/${token}/submissions`, {
+      await publicFetch(`/api/v1/public/survey/${token}/submissions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patientId: verifiedPatient?.patient?.id || "",
           visitId: verifiedPatient?.visit?.id || "",
@@ -150,8 +140,9 @@ export function PublicSurveyChat() {
           durationSeconds: Math.max(1, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000)),
           answers,
         }),
+      }).then((response) => {
+        if (!response.ok) throw new Error("提交失败，请稍后重试")
       })
-      if (!response.ok) throw new Error("提交失败，请稍后重试")
       setSubmitted(true)
       setMessage("")
     } catch (error) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { apiBase, requireSession } from "../lib/auth"
+import { authedJson } from "../lib/auth"
 
 type Section = "sip" | "storage" | "recording" | "models"
 
@@ -88,30 +88,18 @@ function optionLabel(value: string) {
 }
 
 export function PlatformConfigManager({ section }: Props) {
-  const [token, setToken] = useState("")
   const [items, setItems] = useState<ConfigItem[]>([])
   const [selectedId, setSelectedId] = useState("")
   const [draft, setDraft] = useState<ConfigItem>(empty[section])
   const [message, setMessage] = useState("正在连接配置 API...")
   const current = meta[section]
 
-  async function authed<T>(path: string, accessToken = token, init?: RequestInit): Promise<T> {
-    requireSession()
-    const response = await fetch(`${apiBase}${path}`, {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
-    })
-    if (!response.ok) throw new Error(await response.text())
-    return response.json()
+  async function authed<T>(path: string, init?: RequestInit): Promise<T> {
+    return authedJson<T>(path, init)
   }
 
   async function load() {
     try {
-      requireSession()
       setItems(await authed<ConfigItem[]>(current.path))
       setMessage("")
     } catch (error) {
@@ -123,7 +111,7 @@ export function PlatformConfigManager({ section }: Props) {
     try {
       const method = selectedId ? "PUT" : "POST"
       const path = selectedId ? `${current.path}/${selectedId}` : current.path
-      const saved = await authed<ConfigItem>(path, token, { method, body: JSON.stringify(draft) })
+      const saved = await authed<ConfigItem>(path, { method, body: JSON.stringify(draft) })
       setItems(selectedId ? items.map((item) => item.id === selectedId ? saved : item) : [saved, ...items])
       setSelectedId(saved.id)
       setDraft(saved)
@@ -137,7 +125,7 @@ export function PlatformConfigManager({ section }: Props) {
     const item = items.find((entry) => entry.id === id)
     if (!item || !window.confirm(`删除「${item.name}」？`)) return
     try {
-      await authed<ConfigItem>(`${current.path}/${id}`, token, { method: "DELETE" })
+      await authed<ConfigItem>(`${current.path}/${id}`, { method: "DELETE" })
       setItems(items.filter((entry) => entry.id !== id))
       if (selectedId === id) {
         setSelectedId("")

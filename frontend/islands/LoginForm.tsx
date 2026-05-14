@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { apiBase } from "../lib/auth"
+import { accessTokenKey, apiBase } from "../lib/auth"
 
 export function LoginForm() {
   const [username, setUsername] = useState("admin")
@@ -34,9 +34,15 @@ export function LoginForm() {
         if (data.captchaRequired) await loadCaptcha()
         throw new Error(data.message || text || "登录失败")
       }
-      const me = await fetch(`${apiBase}/api/v1/auth/me`, { credentials: "include" })
+      if (data.accessToken) {
+        localStorage.setItem(accessTokenKey, data.accessToken)
+      }
+      const me = await fetch(`${apiBase}/api/v1/auth/me`, {
+        credentials: "include",
+        headers: data.accessToken ? { Authorization: `Bearer ${data.accessToken}` } : {},
+      })
       if (!me.ok) {
-        throw new Error("登录已成功但浏览器没有保存会话 Cookie，请刷新后重试")
+        throw new Error("登录已成功但会话校验失败，请刷新后重试")
       }
       const params = new URLSearchParams(window.location.search)
       window.location.replace(params.get("next") || "/")

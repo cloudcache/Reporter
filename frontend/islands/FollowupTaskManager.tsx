@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { authedJson } from "../lib/auth"
 import { SipSoftphonePanel } from "./SipSoftphonePanel"
+import { FollowupChannelActions, type IntegrationChannel } from "./FollowupChannelActions"
 
 interface Task {
   id: string
@@ -65,7 +66,7 @@ interface FormLibrary { templates: FormTemplate[] }
 interface FollowupPlan { id: string; name: string; scenario: string; formTemplateId: string }
 
 const statusLabel: Record<string, string> = { pending: "待随访", assigned: "已分配", in_progress: "进行中", completed: "已完成", failed: "失败" }
-const channelLabels: Record<string, string> = { phone: "电话随访", sms: "短信随访", wechat: "微信随访", web: "网页随访" }
+const channelLabels: Record<string, string> = { phone: "电话随访", sms: "短信随访", wechat: "微信随访", qq: "QQ 随访", web: "网页随访" }
 const today = new Date().toISOString().slice(0, 10)
 
 export function FollowupTaskManager() {
@@ -76,6 +77,7 @@ export function FollowupTaskManager() {
   const [sipEndpoints, setSipEndpoints] = useState<SipEndpoint[]>([])
   const [calls, setCalls] = useState<CallSession[]>([])
   const [recordings, setRecordings] = useState<Recording[]>([])
+  const [integrationChannels, setIntegrationChannels] = useState<IntegrationChannel[]>([])
   const [templates, setTemplates] = useState<FormTemplate[]>([])
   const [plans, setPlans] = useState<FollowupPlan[]>([])
   const [activeWorkTab, setActiveWorkTab] = useState<"form" | "records" | "notes">("form")
@@ -83,9 +85,10 @@ export function FollowupTaskManager() {
 
   async function load(status = filter) {
     try {
-      const [taskData, endpointData, callData, recordingData, library, planData] = await Promise.all([
+      const [taskData, endpointData, channelData, callData, recordingData, library, planData] = await Promise.all([
         authedJson<Task[]>(`/api/v1/followup/tasks${status ? `?status=${status}` : ""}`),
         authedJson<SipEndpoint[]>("/api/v1/call-center/sip-endpoints"),
+        authedJson<IntegrationChannel[]>("/api/v1/integration-channels").catch(() => []),
         authedJson<CallSession[]>("/api/v1/call-center/calls"),
         authedJson<Recording[]>("/api/v1/call-center/recordings"),
         authedJson<FormLibrary>("/api/v1/form-library"),
@@ -93,6 +96,7 @@ export function FollowupTaskManager() {
       ])
       setTasks(taskData)
       setSipEndpoints(endpointData)
+      setIntegrationChannels(channelData)
       setCalls(callData)
       setRecordings(recordingData)
       setTemplates(library.templates || [])
@@ -163,10 +167,24 @@ export function FollowupTaskManager() {
           <tbody>{tasks.map((task) => <tr key={task.id} className="border-t border-line">
             <td className="px-4 py-3 font-medium">{task.patientName || task.patientId}</td><td className="px-4 py-3">{task.patientPhone}</td><td className="px-4 py-3">{taskType(task)}</td><td className="px-4 py-3">{templateLabel(task)}</td><td className="px-4 py-3">{task.assigneeName || task.role}</td><td className="px-4 py-3">{statusLabel[task.status] || task.status}</td><td className="px-4 py-3">{task.dueAt}</td>
             <td className="px-4 py-3 text-right">
-              <button className="mr-2 text-primary" onClick={() => openCall(task)}>电话随访</button>
-              <button className="mr-2 text-primary" onClick={() => transition(task, "in_progress", "开始执行")}>开始</button>
-              <button className="mr-2 text-primary" onClick={() => transition(task, "completed", "随访完成")}>完成</button>
-              <button className="text-red-600" onClick={() => transition(task, "failed", "随访失败")}>失败</button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <FollowupChannelActions
+                  target={{
+                    patientId: task.patientId,
+                    patientName: task.patientName,
+                    patientPhone: task.patientPhone,
+                    formTemplateId: task.formTemplateId,
+                    title: `${task.patientName || "患者"}${templateLabel(task)}`,
+                  }}
+                  channels={integrationChannels}
+                  sipEndpoints={sipEndpoints}
+                  onPhone={() => openCall(task)}
+                  onMessage={setMessage}
+                />
+                <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-primary" onClick={() => transition(task, "in_progress", "开始执行")}>开始</button>
+                <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-primary" onClick={() => transition(task, "completed", "随访完成")}>完成</button>
+                <button className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:border-red-400" onClick={() => transition(task, "failed", "随访失败")}>失败</button>
+              </div>
             </td>
           </tr>)}</tbody>
         </table>

@@ -218,8 +218,11 @@ func NewMemoryStore() *MemoryStore {
 	store.datasets["DS003"] = domain.Dataset{ID: "DS003", Name: "心血管疾病筛查", Description: "心血管疾病高危人群筛查数据", Owner: "体检中心", RecordCount: 2100, FormCount: 6, Status: "archived", CreatedAt: now, UpdatedAt: now}
 	store.departments["DEPT-CARD"] = domain.Department{ID: "DEPT-CARD", Code: "CARD", Name: "心内科", Kind: "clinical", Status: "active", CreatedAt: now, UpdatedAt: now}
 	store.departments["DEPT-ENDO"] = domain.Department{ID: "DEPT-ENDO", Code: "ENDO", Name: "内分泌科", Kind: "clinical", Status: "active", CreatedAt: now, UpdatedAt: now}
-	store.dictionaries["DICT-GENDER"] = domain.Dictionary{ID: "DICT-GENDER", Code: "gender", Name: "性别字典", Category: "患者基础", Items: []domain.DictionaryEntry{{Key: "M", Label: "男", Value: "男"}, {Key: "F", Label: "女", Value: "女"}, {Key: "O", Label: "其他", Value: "其他"}}, CreatedAt: now, UpdatedAt: now}
-	store.dictionaries["DICT-FOLLOWUP-STATUS"] = domain.Dictionary{ID: "DICT-FOLLOWUP-STATUS", Code: "followup_status", Name: "随访任务状态", Category: "随访中心", Items: []domain.DictionaryEntry{{Key: "pending", Label: "待随访", Value: "pending"}, {Key: "assigned", Label: "已分配", Value: "assigned"}, {Key: "in_progress", Label: "进行中", Value: "in_progress"}, {Key: "completed", Label: "已完成", Value: "completed"}, {Key: "failed", Label: "失败", Value: "failed"}}, CreatedAt: now, UpdatedAt: now}
+	for _, dictionary := range DefaultDictionaries() {
+		dictionary.CreatedAt = now
+		dictionary.UpdatedAt = now
+		store.dictionaries[dictionary.ID] = dictionary
+	}
 	store.followPlans["PLAN-HTN"] = domain.FollowupPlan{ID: "PLAN-HTN", Name: "高血压慢病随访", Scenario: "慢病", DiseaseCode: "I10", DepartmentID: "DEPT-CARD", FormTemplateID: "hypertension-follow-up", TriggerType: "定期", TriggerOffset: 30, Channel: "phone", AssigneeRole: "agent", Status: "active", Rules: map[string]interface{}{"ageMin": 45, "diagnosis": "高血压"}, CreatedAt: now, UpdatedAt: now}
 	store.followPlans["PLAN-DISCHARGE"] = domain.FollowupPlan{ID: "PLAN-DISCHARGE", Name: "出院后 7 日随访", Scenario: "随访", FormTemplateID: "discharge-follow-up", TriggerType: "出院后", TriggerOffset: 7, Channel: "phone", AssigneeRole: "nurse", Status: "active", CreatedAt: now, UpdatedAt: now}
 	store.followTasks["TASK-001"] = domain.FollowupTask{ID: "TASK-001", PlanID: "PLAN-HTN", PatientID: "P001", PatientName: "张三", PatientPhone: "13800010001", FormTemplateID: "hypertension-follow-up", AssigneeID: "1", AssigneeName: "管理员", Role: "agent", Channel: "phone", Status: "pending", Priority: "high", DueAt: "2026-05-15", LastEvent: "系统按高血压方案生成任务", CreatedAt: now, UpdatedAt: now}

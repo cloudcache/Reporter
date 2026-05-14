@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css"
 import { AccountMenu } from "../islands/AccountMenu"
+import { GlobalSearch } from "../islands/GlobalSearch"
 
 const navGroups = [
   {
@@ -8,9 +9,10 @@ const navGroups = [
     items: [
       { href: "/", label: "概览", icon: "G" },
       { href: "/patients", label: "患者管理", icon: "P" },
+      { href: "/schedule", label: "日历日程", icon: "K" },
       { href: "/datasets", label: "数据集", icon: "D" },
       { href: "/design", label: "表单设计", icon: "F" },
-      { href: "/reports", label: "报表", icon: "R" },
+      { href: "/reports", label: "分析报表", icon: "R" },
       { href: "/complaints", label: "评价投诉", icon: "E" },
     ],
   },
@@ -75,10 +77,7 @@ const currentPath = Astro.url.pathname
           <span class="hidden rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-primary md:inline-flex">医疗研究管理</span>
         </div>
         <div class="hidden w-full max-w-md md:block">
-          <label class="relative block">
-            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">⌕</span>
-            <input class="h-10 w-full rounded-lg border border-line bg-gray-50 px-9 text-sm text-ink outline-none focus:border-primary focus:bg-white focus:ring-2 focus:ring-blue-100" placeholder="搜索患者、表单、数据源" />
-          </label>
+          <GlobalSearch client:load />
         </div>
         <AccountMenu client:load />
       </div>
