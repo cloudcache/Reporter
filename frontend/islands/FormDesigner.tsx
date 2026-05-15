@@ -359,6 +359,7 @@ export function FormDesigner() {
       setForms([form, ...forms])
     }
     const version = await authedJson<FormVersion>(`/api/v1/forms/${activeFormId}/versions`, { method: "POST", body: JSON.stringify({ schema: components }) })
+    await reloadForms(activeFormId)
     setFormStatus("draft")
     setLibraryMessage(`已保存第 ${version.version} 版，发布后该版本锁定；继续修改会生成新版本。`)
   }
@@ -369,6 +370,23 @@ export function FormDesigner() {
     setFormStatus(form.status)
     setForms(forms.map((item) => item.id === form.id ? form : item))
     setLibraryMessage("已发布当前版本，线上问卷将使用该版本。")
+  }
+
+  async function reloadForms(activeFormId = formId) {
+    const nextForms = await authedJson<ManagedForm[]>("/api/v1/forms").catch(() => forms)
+    setForms(nextForms)
+    const active = nextForms.find((item) => item.id === activeFormId)
+    if (active) {
+      setFormStatus(active.status)
+      const version = active.versions?.find((item) => item.id === active.currentVersionId) || active.versions?.at(-1)
+      if (version?.schema?.length) setComponents(version.schema)
+    }
+  }
+
+  function loadVersion(version: FormVersion) {
+    setComponents(version.schema || [])
+    setSelected(version.schema?.[0]?.id || "")
+    setLibraryMessage(`已载入 v${version.version} ${version.published ? "发布版本" : "历史版本"}。修改后请保存为新版本，原版本不被覆盖。`)
   }
 
   async function importQuestionBank() {
@@ -519,12 +537,27 @@ export function FormDesigner() {
           <span>状态：{formStatus === "published" ? "已发布，线上版本已锁定；继续保存会生成新版本" : "草稿，可继续编辑"} · 当前题目 {components.filter((item) => item.type !== "section").length} 个 · 矩阵 {components.filter((item) => item.type === "matrix").length} 个</span>
           <span>{currentForm?.versions?.length ? `历史版本 ${currentForm.versions.length} 个` : "尚未保存版本"}</span>
         </div>
-        {!!currentForm?.versions?.length && <div className="mb-3 flex flex-wrap gap-2">
-          {currentForm.versions.map((version) => (
-            <button key={version.id} className={`rounded-lg border px-3 py-1.5 text-xs ${version.id === currentForm.currentVersionId ? "border-primary bg-blue-50 text-primary" : "border-line text-muted"}`} onClick={() => setComponents(version.schema || [])}>
-              v{version.version}{version.published ? " · 已发布" : ""}
-            </button>
-          ))}
+        {!!currentForm?.versions?.length && <div className="mb-4 rounded-lg border border-line bg-white p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">版本治理</div>
+              <div className="mt-1 text-xs text-muted">发布版本会锁定给公开问卷和项目渠道使用；历史版本只能载入复制，不能原地覆盖。</div>
+            </div>
+            <button className="rounded-lg border border-line px-3 py-1.5 text-xs text-primary" onClick={() => reloadForms()}>刷新版本</button>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {currentForm.versions.map((version) => {
+              const isCurrent = version.id === currentForm.currentVersionId
+              return <button key={version.id} className={`rounded-lg border p-3 text-left text-xs ${isCurrent ? "border-primary bg-blue-50 text-primary" : "border-line text-muted"}`} onClick={() => loadVersion(version)}>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-ink">v{version.version}</span>
+                  <span className={`rounded-full px-2 py-0.5 ${version.published ? "bg-green-50 text-green-700" : "bg-gray-100 text-muted"}`}>{version.published ? "已发布 / 已锁定" : "草稿快照"}</span>
+                </span>
+                <span className="mt-2 block text-muted">{new Date(version.createdAt).toLocaleString()}</span>
+                <span className="mt-1 block text-muted">{version.schema?.filter((item) => item.type !== "section").length || 0} 个题目 · 点击载入后另存新版本</span>
+              </button>
+            })}
+          </div>
         </div>}
         {components.length === 0 ? (
           <div className="flex min-h-[560px] items-center justify-center rounded-lg border-2 border-dashed border-line text-sm text-muted">

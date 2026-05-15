@@ -1375,6 +1375,9 @@ func (s *Store) AuditLogs() []domain.AuditLog {
 }
 
 func (s *Store) Forms() []domain.Form {
+	if forms, err := s.formsFromSQL(context.Background()); err == nil {
+		return forms
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	forms := make([]domain.Form, 0, len(s.forms))
@@ -1385,6 +1388,9 @@ func (s *Store) Forms() []domain.Form {
 }
 
 func (s *Store) CreateForm(form domain.Form) domain.Form {
+	if saved, err := s.createFormInSQL(context.Background(), form); err == nil {
+		return saved
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -1397,6 +1403,9 @@ func (s *Store) CreateForm(form domain.Form) domain.Form {
 }
 
 func (s *Store) CreateFormVersion(formID, actor string, schema []domain.FormComponent) (domain.FormVersion, error) {
+	if version, err := s.createFormVersionInSQL(context.Background(), formID, actor, schema); err == nil {
+		return version, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	form, ok := s.forms[formID]
@@ -1418,6 +1427,9 @@ func (s *Store) CreateFormVersion(formID, actor string, schema []domain.FormComp
 }
 
 func (s *Store) PublishForm(formID string) (domain.Form, error) {
+	if form, err := s.publishFormInSQL(context.Background(), formID); err == nil {
+		return form, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	form, ok := s.forms[formID]
@@ -1439,6 +1451,9 @@ func (s *Store) PublishForm(formID string) (domain.Form, error) {
 }
 
 func (s *Store) CreateSubmission(submission domain.Submission) (domain.Submission, error) {
+	if saved, err := s.createSubmissionInSQL(context.Background(), submission); err == nil {
+		return saved, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	form, ok := s.forms[submission.FormID]

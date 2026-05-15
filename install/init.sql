@@ -376,10 +376,15 @@ CREATE TABLE form_versions (
   form_id CHAR(36) NOT NULL,
   version INT NOT NULL,
   schema_json JSON NOT NULL,
+  schema_hash VARCHAR(64) NULL,
+  change_note TEXT NULL,
   created_by CHAR(36) NULL,
   published BOOLEAN NOT NULL DEFAULT FALSE,
+  locked_at TIMESTAMP NULL,
+  published_at TIMESTAMP NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_form_version (form_id, version),
+  INDEX idx_form_versions_hash (form_id, schema_hash),
   CONSTRAINT fk_form_versions_form FOREIGN KEY (form_id) REFERENCES forms(id),
   CONSTRAINT fk_form_versions_creator FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -575,6 +580,27 @@ CREATE TABLE survey_share_links (
   INDEX idx_survey_share_links_project (project_id),
   INDEX idx_survey_share_links_template (form_template_id),
   INDEX idx_survey_share_links_channel (channel)
+);
+
+CREATE TABLE survey_channel_deliveries (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NULL,
+  share_id CHAR(36) NOT NULL,
+  channel VARCHAR(40) NOT NULL,
+  recipient VARCHAR(180) NOT NULL,
+  recipient_name VARCHAR(120) NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'queued',
+  message TEXT NULL,
+  error TEXT NULL,
+  provider_ref VARCHAR(180) NULL,
+  config_json JSON NULL,
+  sent_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_survey_deliveries_project (project_id),
+  INDEX idx_survey_deliveries_share (share_id),
+  INDEX idx_survey_deliveries_status (status),
+  INDEX idx_survey_deliveries_recipient (recipient)
 );
 
 CREATE TABLE survey_interviews (

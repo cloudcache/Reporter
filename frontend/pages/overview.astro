@@ -4,8 +4,8 @@ import "../styles/global.css"
 const capabilities = [
   {
     eyebrow: "Project Root",
-    title: "项目作为业务根节点",
-    body: "调查、随访、投诉、指标、数据、渠道、审核、分析和整改都挂在项目生命周期下，不再散落成孤立入口。",
+    title: "项目统筹全流程",
+    body: "把调查、随访、投诉、指标、数据、渠道、审核、分析和整改统一纳入项目生命周期。",
     points: ["项目列表 / 新建 / 属性编辑 / 项目看板拆分", "角色人员、任务模板、期次、能力模块独立配置", "渠道发布、答卷入库、质控审核、分析整改按项目聚合"],
   },
   {
@@ -38,7 +38,7 @@ const usage = [
 ]
 
 const coreModules = [
-  { title: "项目管理", href: "/projects", desc: "项目列表、新建项目、属性编辑、看板、生命周期和任务模板。", tags: ["项目根节点", "角色人员", "期次管理"] },
+  { title: "项目管理", href: "/projects", desc: "集中管理项目列表、项目配置、看板、生命周期和任务模板。", tags: ["项目统筹", "角色人员", "期次管理"] },
   { title: "表单设计", href: "/design", desc: "维护问卷/访谈采集模板，发布正式版本后被项目绑定。", tags: ["题库组件", "版本发布", "患者验证"] },
   { title: "数据源", href: "/sources", desc: "配置 HIS、EMR、LIS、PACS、随访和投诉等数据接口与字段映射。", tags: ["协议配置", "字段映射", "质量规则"] },
   { title: "患者管理", href: "/patients", desc: "查看患者主索引、就诊记录、随访入口和 Patient 360。", tags: ["真实入库", "就诊记录", "临床事实"] },
@@ -80,9 +80,20 @@ const dataSourceSteps = [
 ]
 
 const roadmap = [
-  { phase: "已收口", title: "产品化主流程", items: ["指标树、批量导入、题目选择绑定和国考映射", "题库复用、矩阵题、跳转/关联显示、发布版本锁定", "渠道回执、失败重试、发送统计和最近回执"] },
-  { phase: "中期", title: "管理分析增强", items: ["重要性矩阵、方差/相关性分析", "五级质控、调查员管理", "整改催办、超期提醒、前后指标对比"] },
-  { phase: "长期", title: "智能洞察与生态", items: ["开放题情绪和主题聚类", "根因分析与自动改进建议", "国考对标、Word/PDF 自动报告"] },
+  { phase: "方向一", title: "AI 在线访谈", items: ["聊天式调查、访谈和随访问答", "预问诊、导诊和复查指引", "按患者身份和就诊信息动态推送表单"] },
+  { phase: "方向二", title: "AI 电话访谈", items: ["实时电话语音访谈和问答", "通话中识别意图、情绪和关键事实", "自动形成小结、标签和后续任务"] },
+  { phase: "方向三", title: "通用灵活表单", items: ["适配预约、登记、会议会务和宣传活动", "组件模板、数据模板和渠道触达复用", "按项目组织采集、审核、统计和归档"] },
+]
+
+const slides = [
+  { id: "cover", label: "总览" },
+  { id: "capabilities", label: "能力" },
+  { id: "workflow", label: "用法" },
+  { id: "navigation", label: "入口" },
+  { id: "project", label: "项目" },
+  { id: "forms", label: "表单" },
+  { id: "datasource", label: "数据源" },
+  { id: "roadmap", label: "计划" },
 ]
 ---
 
@@ -93,18 +104,55 @@ const roadmap = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Reporter 患者满意度、随访、投诉和医疗数据分析平台能力总览" />
     <title>Reporter 平台能力总览</title>
+    <style>
+      .slide-bg-grid {
+        background-image:
+          linear-gradient(rgb(15 23 42 / 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(15 23 42 / 0.04) 1px, transparent 1px);
+        background-size: 32px 32px;
+      }
+      .slide-nav-active {
+        border-color: #1a56db;
+        background: #eff6ff;
+        color: #1a56db;
+      }
+      .slide-dot-active {
+        height: 2rem;
+        background: #1a56db;
+      }
+    </style>
   </head>
   <body class="bg-[#f6f8fb] text-ink">
-    <main class="snap-y snap-mandatory overflow-y-auto scroll-smooth">
-      <section class="min-h-screen snap-start border-b border-line bg-white">
+    <header class="fixed left-0 right-0 top-0 z-50 border-b border-line bg-white/90 backdrop-blur">
+      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 lg:px-8">
+        <a href="#cover" class="flex items-center gap-3">
+          <span class="grid h-9 w-9 place-items-center rounded-lg bg-primary text-sm font-bold text-white">R</span>
+          <span class="hidden text-sm font-bold text-ink sm:inline">Reporter Overview</span>
+        </a>
+        <nav class="flex min-w-0 flex-1 justify-center gap-1 overflow-x-auto px-2">
+          {slides.map((slide, index) => (
+            <a data-slide-link={slide.id} href={`#${slide.id}`} class="shrink-0 rounded-full border border-transparent px-3 py-1.5 text-xs font-semibold text-muted hover:border-line hover:text-primary">
+              {String(index + 1).padStart(2, "0")} {slide.label}
+            </a>
+          ))}
+        </nav>
+        <a href="/projects" class="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">进入系统</a>
+      </div>
+    </header>
+
+    <aside class="fixed right-5 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-center gap-3 lg:flex">
+      {slides.map((slide, index) => (
+        <a data-slide-dot={slide.id} href={`#${slide.id}`} class="h-3 w-1.5 rounded-full bg-slate-300 transition-all" aria-label={`${index + 1}. ${slide.label}`}></a>
+      ))}
+    </aside>
+
+    <main id="deck" class="h-screen snap-y snap-mandatory overflow-y-auto scroll-smooth">
+      <section id="cover" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-white">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-100 lg:block">01</div>
         <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[0.9fr_1.1fr] lg:px-10">
           <div class="flex flex-col justify-center">
-            <a href="/" class="mb-10 inline-flex w-fit items-center gap-3 text-sm font-semibold text-primary">
-              <span class="grid h-9 w-9 place-items-center rounded-lg bg-primary text-white">R</span>
-              Reporter 平台
-            </a>
             <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Patient Experience Platform</p>
-            <h1 class="mt-5 max-w-3xl text-5xl font-bold leading-tight tracking-normal text-ink md:text-7xl">把满意度、随访、投诉和医疗数据放进同一个项目闭环</h1>
+            <h1 class="mt-5 max-w-3xl text-4xl font-bold leading-tight tracking-normal text-ink md:text-5xl lg:text-6xl">360 闭环管理</h1>
             <p class="mt-6 max-w-2xl text-lg leading-8 text-muted">当前平台已经具备项目管理、表单发布、患者验证、真实入库、Patient 360、渠道触达、数据清洗、指标分析和整改闭环的主干能力。</p>
             <div class="mt-8 flex flex-wrap gap-3">
               <a class="rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white" href="/projects">进入项目</a>
@@ -165,12 +213,17 @@ const roadmap = [
             </div>
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <span>Slide 01 / {slides.length}</span>
+          <a href="#capabilities" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start border-b border-line bg-[#f6f8fb]">
+      <section id="capabilities" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-[#f6f8fb]">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-200 lg:block">02</div>
         <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
           <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Capabilities</p>
-          <h2 class="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">平台现在能做什么</h2>
+          <h2 class="mt-4 max-w-3xl text-3xl font-bold leading-tight md:text-4xl">平台能力</h2>
           <div class="mt-10 grid gap-5 lg:grid-cols-4">
             {capabilities.map((item) => (
               <article class="flex min-h-[26rem] flex-col rounded-lg border border-line bg-white p-6">
@@ -184,13 +237,19 @@ const roadmap = [
             ))}
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <a href="#cover">上一页</a>
+          <span>Slide 02 / {slides.length}</span>
+          <a href="#workflow" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start border-b border-line bg-white">
+      <section id="workflow" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-white">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-100 lg:block">03</div>
         <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[0.7fr_1.3fr] lg:px-10">
           <div>
             <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Workflow</p>
-            <h2 class="mt-4 text-4xl font-bold leading-tight md:text-6xl">怎么使用</h2>
+            <h2 class="mt-4 text-3xl font-bold leading-tight md:text-4xl">使用路径</h2>
             <p class="mt-6 text-lg leading-8 text-muted">从项目开始，而不是从单个表单或单条链接开始。项目负责组织角色、任务、数据、渠道、质控、分析和整改。</p>
           </div>
           <div class="grid gap-4 md:grid-cols-2">
@@ -205,14 +264,20 @@ const roadmap = [
             ))}
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <a href="#capabilities">上一页</a>
+          <span>Slide 03 / {slides.length}</span>
+          <a href="#navigation" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start border-b border-line bg-[#f6f8fb]">
+      <section id="navigation" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-[#f6f8fb]">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-200 lg:block">04</div>
         <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
           <div class="flex flex-wrap items-end justify-between gap-6">
             <div>
               <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Navigation</p>
-              <h2 class="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">核心功能从哪里进入</h2>
+              <h2 class="mt-4 max-w-3xl text-3xl font-bold leading-tight md:text-4xl">核心入口</h2>
             </div>
             <p class="max-w-xl text-base leading-7 text-muted">日常使用建议按“项目 -> 表单 -> 数据源 -> 渠道 -> 审核 -> 分析整改”走。系统管理和接口配置作为支撑能力。</p>
           </div>
@@ -231,14 +296,20 @@ const roadmap = [
             ))}
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <a href="#workflow">上一页</a>
+          <span>Slide 04 / {slides.length}</span>
+          <a href="#project" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start border-b border-line bg-white">
+      <section id="project" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-white">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-100 lg:block">05</div>
         <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:px-10">
           <div>
             <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Project Setup</p>
-            <h2 class="mt-4 text-4xl font-bold leading-tight md:text-6xl">项目怎么配置才不乱</h2>
-            <p class="mt-6 text-lg leading-8 text-muted">项目是业务闭环的根，项目属性只管“这个项目是什么”；具体执行能力拆到子页面，避免把所有事情塞进一个巨大的表单。</p>
+            <h2 class="mt-4 text-3xl font-bold leading-tight md:text-4xl">项目配置</h2>
+            <p class="mt-6 text-lg leading-8 text-muted">项目负责统筹目标、人员、表单、渠道、质控、分析和整改，每项工作都有清晰入口和处理节奏。</p>
             <div class="mt-8 rounded-lg border border-blue-200 bg-blue-50 p-5 text-primary">
               <p class="font-semibold">推荐路径</p>
               <p class="mt-2 leading-7">先建项目和生命周期，再配角色人员与任务模板，最后绑定表单数据、发布渠道、质控清洗和分析整改。</p>
@@ -254,13 +325,19 @@ const roadmap = [
             ))}
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <a href="#navigation">上一页</a>
+          <span>Slide 05 / {slides.length}</span>
+          <a href="#forms" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start border-b border-line bg-[#f6f8fb]">
+      <section id="forms" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-[#f6f8fb]">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-200 lg:block">06</div>
         <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
           <div>
             <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Forms & Data</p>
-            <h2 class="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">表单不是孤立问卷，要和数据绑定</h2>
+            <h2 class="mt-4 max-w-3xl text-3xl font-bold leading-tight md:text-4xl">表单与数据</h2>
             <div class="mt-8 grid gap-4 md:grid-cols-2">
               {formSteps.map(([title, text], index) => (
                 <article class="rounded-lg border border-line bg-white p-5">
@@ -293,14 +370,20 @@ const roadmap = [
             </div>
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <a href="#project">上一页</a>
+          <span>Slide 06 / {slides.length}</span>
+          <a href="#datasource" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start border-b border-line bg-white">
+      <section id="datasource" data-slide class="slide-bg-grid relative min-h-screen snap-start overflow-hidden border-b border-line bg-white">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-slate-100 lg:block">07</div>
         <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
           <div class="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
             <div>
               <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Data Source</p>
-              <h2 class="mt-4 text-4xl font-bold leading-tight md:text-6xl">数据源和字段映射怎么配</h2>
+              <h2 class="mt-4 text-3xl font-bold leading-tight md:text-4xl">数据源映射</h2>
               <p class="mt-6 text-lg leading-8 text-muted">数据源页负责把院内接口、库表、HL7/DICOM 消息和外部系统字段转成平台标准字段。同步结果直接进入数据库，供患者 360、项目分析和报表使用。</p>
             </div>
             <div class="grid gap-4 md:grid-cols-5">
@@ -330,12 +413,18 @@ const roadmap = [
             </div>
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-muted lg:left-10 lg:right-10">
+          <a href="#forms">上一页</a>
+          <span>Slide 07 / {slides.length}</span>
+          <a href="#roadmap" class="text-primary">下一页</a>
+        </div>
       </section>
 
-      <section class="min-h-screen snap-start bg-[#101827] text-white">
+      <section id="roadmap" data-slide class="relative min-h-screen snap-start overflow-hidden bg-[#101827] text-white">
+        <div class="pointer-events-none absolute right-8 top-24 hidden text-8xl font-black text-white/10 lg:block">08</div>
         <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
           <p class="text-sm font-semibold uppercase tracking-[0.18em] text-blue-200">Roadmap</p>
-          <h2 class="mt-4 max-w-4xl text-4xl font-bold leading-tight md:text-6xl">中长期开发计划</h2>
+          <h2 class="mt-4 max-w-4xl text-3xl font-bold leading-tight md:text-4xl">开发计划</h2>
           <div class="mt-10 grid gap-5 lg:grid-cols-3">
             {roadmap.map((item) => (
               <article class="rounded-lg border border-white/15 bg-white/5 p-6">
@@ -352,7 +441,36 @@ const roadmap = [
             <a class="rounded-lg border border-white/20 px-5 py-3 text-sm font-semibold text-white" href="/sources">配置数据接口</a>
           </div>
         </div>
+        <div class="absolute bottom-6 left-6 right-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 lg:left-10 lg:right-10">
+          <a href="#datasource">上一页</a>
+          <span>Slide 08 / {slides.length}</span>
+          <a href="#cover" class="text-white">回到开头</a>
+        </div>
       </section>
     </main>
+    <script is:inline>
+      const deck = document.getElementById("deck");
+      const slides = Array.from(document.querySelectorAll("[data-slide]"));
+      const links = Array.from(document.querySelectorAll("[data-slide-link]"));
+      const dots = Array.from(document.querySelectorAll("[data-slide-dot]"));
+      const setActive = (id) => {
+        links.forEach((link) => link.classList.toggle("slide-nav-active", link.getAttribute("data-slide-link") === id));
+        dots.forEach((dot) => dot.classList.toggle("slide-dot-active", dot.getAttribute("data-slide-dot") === id));
+      };
+      const observer = new IntersectionObserver((entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible?.target?.id) setActive(visible.target.id);
+      }, { root: deck, threshold: [0.55, 0.7, 0.9] });
+      slides.forEach((slide) => observer.observe(slide));
+      setActive("cover");
+      window.addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowRight", "PageDown", "ArrowUp", "ArrowLeft", "PageUp"].includes(event.key)) return;
+        const currentIndex = Math.max(0, slides.findIndex((slide) => slide.id === location.hash.replace("#", "")));
+        const nextIndex = ["ArrowDown", "ArrowRight", "PageDown"].includes(event.key)
+          ? Math.min(slides.length - 1, currentIndex + 1)
+          : Math.max(0, currentIndex - 1);
+        slides[nextIndex]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    </script>
   </body>
 </html>
