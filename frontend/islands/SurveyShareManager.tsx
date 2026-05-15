@@ -12,7 +12,7 @@ type ProjectModule = "channels" | "answers" | "indicators" | "cleaning" | "analy
 type ProjectTab = ProjectCoreTab | ProjectModule
 interface Project { id: string; name: string; targetType: string; formTemplateId: string; startDate?: string; endDate?: string; targetSampleSize: number; actualSampleSize: number; anonymous: boolean; requiresVerification: boolean; status: string; config?: Record<string, unknown> }
 interface Share { id: string; projectId?: string; formTemplateId: string; title: string; channel: string; token: string; url: string; config?: Record<string, unknown> }
-interface Delivery { id: string; projectId?: string; shareId: string; channel: string; recipient: string; recipientName?: string; status: string; message?: string; error?: string; providerRef?: string; sentAt?: string; createdAt: string }
+interface Delivery { id: string; projectId?: string; shareId: string; channel: string; recipient: string; recipientName?: string; status: string; message?: string; error?: string; providerRef?: string; sentAt?: string; createdAt: string; config?: Record<string, unknown> }
 interface ChannelConfig { id: string; kind: string; name: string; endpoint?: string; appId?: string; credentialRef?: string; enabled: boolean; config?: Record<string, unknown> }
 interface SipEndpoint { id: string; name: string; config?: Record<string, unknown> }
 interface ChannelRecipient { patientId: string; patientNo?: string; name: string; channel: string; recipient: string; source: string; available: boolean; unavailable?: string }
@@ -101,7 +101,7 @@ export function SurveyShareManager({ initialTab = "overview", view = "module" }:
         ])
         setTemplates(library.templates || [])
         setForms(managedForms)
-        setProjects(nextProjects)
+        setProjects(cleanProjects(nextProjects))
         setMessage("")
         return
       }
@@ -115,12 +115,13 @@ export function SurveyShareManager({ initialTab = "overview", view = "module" }:
       ])
       setTemplates(library.templates || [])
       setForms(managedForms)
-      setProjects(nextProjects)
+      setProjects(cleanProjects(nextProjects))
       setShares(nextShares)
       setChannelConfigs(nextChannels)
       setSipEndpoints(nextSipEndpoints)
       const focusId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("focus") || "" : ""
-      const activeId = nextProjectId || selectedProjectId || focusId || nextProjects[0]?.id || ""
+      const cleanedProjects = cleanProjects(nextProjects)
+      const activeId = nextProjectId || selectedProjectId || focusId || cleanedProjects[0]?.id || ""
       setSelectedProjectId(activeId)
       if (!draft.formTemplateId) {
         const firstForm = managedForms.find((form) => publishedFormVersion(form))
@@ -130,7 +131,7 @@ export function SurveyShareManager({ initialTab = "overview", view = "module" }:
       if (view !== "list") await loadProjectData(activeId)
       setMessage("")
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "加载失败")
+      setMessage(readableError(error))
     }
   }
 
@@ -255,6 +256,19 @@ export function SurveyShareManager({ initialTab = "overview", view = "module" }:
     setMessage(`已处理 ${updated.length} 条触达任务`)
   }
 
+  async function updateDeliveryReceipt(id: string, status: "delivered" | "failed") {
+    const updated = await authedJson<Delivery>(`/api/v1/survey-channel-deliveries/${id}/receipt`, {
+      method: "POST",
+      body: JSON.stringify({
+        status,
+        error: status === "failed" ? "服务商回执失败" : "",
+        receipt: { source: "manual", note: status === "delivered" ? "人工确认已触达" : "人工确认触达失败" },
+      }),
+    })
+    setDeliveries(deliveries.map((item) => item.id === id ? updated : item))
+    setMessage(status === "delivered" ? "已记录服务商送达回执" : "已记录失败回执")
+  }
+
   async function openDetail(id: string) {
     setDetail(await authedJson<Submission>(`/api/v1/satisfaction/submissions/${id}`))
   }
@@ -339,7 +353,7 @@ export function SurveyShareManager({ initialTab = "overview", view = "module" }:
     {activeTab === "data" && <ProjectDataTab draft={draft} templates={templates} forms={forms} setDraft={setDraft} saveProject={saveProject} />}
     {activeTab === "modules" && <ProjectModulesTab draft={draft} setDraft={setDraft} saveProject={saveProject} />}
     {activeTab === "phases" && <ProjectPhasesTab draft={draft} setDraft={setDraft} saveProject={saveProject} />}
-    {activeTab === "channels" && moduleEnabled(selectedProject || draft, "channels") && <ChannelsTab shares={projectShares} deliveries={deliveries} selectedProject={selectedProject} channelOptions={channelOptions} channelConfigs={channelConfigs} sipEndpoints={sipEndpoints} channelDraft={channelDraft} deliveryDraft={deliveryDraft} recipientKeyword={recipientKeyword} recipientMode={recipientMode} systemRecipients={systemRecipients} setChannelDraft={setChannelDraft} setDeliveryDraft={setDeliveryDraft} setRecipientKeyword={setRecipientKeyword} setRecipientMode={setRecipientMode} createShare={createShare} createDeliveries={createDeliveries} loadSystemRecipients={loadSystemRecipients} sendDelivery={sendDelivery} sendQueuedDeliveries={sendQueuedDeliveries} />}
+    {activeTab === "channels" && moduleEnabled(selectedProject || draft, "channels") && <ChannelsTab shares={projectShares} deliveries={deliveries} selectedProject={selectedProject} channelOptions={channelOptions} channelConfigs={channelConfigs} sipEndpoints={sipEndpoints} channelDraft={channelDraft} deliveryDraft={deliveryDraft} recipientKeyword={recipientKeyword} recipientMode={recipientMode} systemRecipients={systemRecipients} setChannelDraft={setChannelDraft} setDeliveryDraft={setDeliveryDraft} setRecipientKeyword={setRecipientKeyword} setRecipientMode={setRecipientMode} createShare={createShare} createDeliveries={createDeliveries} loadSystemRecipients={loadSystemRecipients} sendDelivery={sendDelivery} sendQueuedDeliveries={sendQueuedDeliveries} updateDeliveryReceipt={updateDeliveryReceipt} />}
     {activeTab === "answers" && moduleEnabled(selectedProject || draft, "answers") && <AnswersTab submissions={submissions} openDetail={openDetail} audit={audit} />}
     {(["indicators", "cleaning", "analysis", "issues"] as const).includes(activeTab as "indicators" | "cleaning" | "analysis" | "issues") && moduleEnabled(selectedProject || draft, activeTab as ProjectModule) && (
       <AnalysisTab
@@ -730,7 +744,7 @@ function ConfigTab({ draft, templates, forms, setDraft, saveProject }: { draft: 
 
 type ChannelDraft = { channel: string; title: string; pointCode: string; pointName: string; location: string; scene: string; tabletMode: boolean; kioskMode: boolean; dailyTarget: string }
 
-function ChannelsTab({ shares, deliveries, selectedProject, channelOptions, channelConfigs, sipEndpoints, channelDraft, deliveryDraft, recipientKeyword, recipientMode, systemRecipients, setChannelDraft, setDeliveryDraft, setRecipientKeyword, setRecipientMode, createShare, createDeliveries, loadSystemRecipients, sendDelivery, sendQueuedDeliveries }: { shares: Share[]; deliveries: Delivery[]; selectedProject?: Project; channelOptions: string[]; channelConfigs: ChannelConfig[]; sipEndpoints: SipEndpoint[]; channelDraft: ChannelDraft; deliveryDraft: { shareId: string; recipients: string; message: string }; recipientKeyword: string; recipientMode: "system" | "manual"; systemRecipients: ChannelRecipient[]; setChannelDraft: (value: ChannelDraft) => void; setDeliveryDraft: (value: { shareId: string; recipients: string; message: string }) => void; setRecipientKeyword: (value: string) => void; setRecipientMode: (value: "system" | "manual") => void; createShare: () => void; createDeliveries: () => void; loadSystemRecipients: () => void; sendDelivery: (id: string) => void; sendQueuedDeliveries: () => void }) {
+function ChannelsTab({ shares, deliveries, selectedProject, channelOptions, channelConfigs, sipEndpoints, channelDraft, deliveryDraft, recipientKeyword, recipientMode, systemRecipients, setChannelDraft, setDeliveryDraft, setRecipientKeyword, setRecipientMode, createShare, createDeliveries, loadSystemRecipients, sendDelivery, sendQueuedDeliveries, updateDeliveryReceipt }: { shares: Share[]; deliveries: Delivery[]; selectedProject?: Project; channelOptions: string[]; channelConfigs: ChannelConfig[]; sipEndpoints: SipEndpoint[]; channelDraft: ChannelDraft; deliveryDraft: { shareId: string; recipients: string; message: string }; recipientKeyword: string; recipientMode: "system" | "manual"; systemRecipients: ChannelRecipient[]; setChannelDraft: (value: ChannelDraft) => void; setDeliveryDraft: (value: { shareId: string; recipients: string; message: string }) => void; setRecipientKeyword: (value: string) => void; setRecipientMode: (value: "system" | "manual") => void; createShare: () => void; createDeliveries: () => void; loadSystemRecipients: () => void; sendDelivery: (id: string) => void; sendQueuedDeliveries: () => void; updateDeliveryReceipt: (id: string, status: "delivered" | "failed") => void }) {
   const selectedShare = shares.find((item) => item.id === deliveryDraft.shareId) || shares[0]
   const availableRecipients = systemRecipients.filter((item) => item.available && item.channel === selectedShare?.channel)
   const enabledMessageChannels = channelConfigs.filter((item) => item.enabled).map((item) => `${channelLabels[item.kind] || item.kind}${typeof item.config?.provider === "string" ? `(${item.config.provider})` : ""}`).join("、") || "未启用"
@@ -739,6 +753,9 @@ function ChannelsTab({ shares, deliveries, selectedProject, channelOptions, chan
   const sent = deliveries.filter((item) => item.status === "sent" || item.status === "delivered").length
   const failed = deliveries.filter((item) => item.status === "failed").length
   const successRate = sent + failed > 0 ? `${Math.round((sent / (sent + failed)) * 100)}%` : "-"
+  const delivered = deliveries.filter((item) => item.status === "delivered").length
+  const receiptRate = sent > 0 ? `${Math.round((delivered / sent) * 100)}%` : "-"
+  const recentReceipts = deliveries.filter((item) => item.config?.receipt).slice(0, 5)
   const flow = [
     { title: "1. 接口准备", text: `短信/微信：${enabledMessageChannels}；电话：${phoneReady ? "SIP 可拨打" : "未启用"}` },
     { title: "2. 发布入口", text: "Web、二维码、院内点位和平板入口都绑定项目、表单版本和渠道场景。" },
@@ -787,7 +804,28 @@ function ChannelsTab({ shares, deliveries, selectedProject, channelOptions, chan
     <div className="grid gap-3 md:grid-cols-3">
       <MetricBox label="触达总数" value={String(deliveries.length)} />
       <MetricBox label="发送成功率" value={successRate} />
-      <MetricBox label="待回执" value={String(deliveries.filter((item) => item.status === "sent").length)} />
+      <MetricBox label="回执率" value={receiptRate} />
+    </div>
+    <div className="grid gap-3 rounded-lg border border-line bg-white p-4 md:grid-cols-[1fr_auto]">
+      <div>
+        <h3 className="font-semibold">回执与重试</h3>
+        <p className="mt-1 text-sm text-muted">真实服务商可回调回执接口；现场联调时也可以手工标记送达/失败，失败任务会进入重试队列。</p>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+          <span className="rounded-full bg-gray-50 px-3 py-1">待发送 {deliveries.filter((item) => item.status === "queued").length}</span>
+          <span className="rounded-full bg-gray-50 px-3 py-1">待回执 {deliveries.filter((item) => item.status === "sent").length}</span>
+          <span className="rounded-full bg-gray-50 px-3 py-1">失败可重试 {failed}</span>
+        </div>
+      </div>
+      <button className="h-10 rounded-lg border border-line px-4 text-sm text-primary disabled:text-muted" disabled={!deliveries.some((item) => item.status === "failed")} onClick={sendQueuedDeliveries}>重试失败任务</button>
+      {!!recentReceipts.length && <div className="md:col-span-2">
+        <div className="mb-2 text-sm font-medium">最近回执</div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          {recentReceipts.map((item) => <div key={item.id} className="rounded-lg border border-line bg-gray-50 px-3 py-2 text-xs">
+            <div className="font-medium">{item.recipientName || item.recipient}</div>
+            <div className="mt-1 text-muted">{deliveryStatus(item.status)} · {String((item.config?.receipt as Record<string, unknown> | undefined)?.receivedAt || item.sentAt || "-")}</div>
+          </div>)}
+        </div>
+      </div>}
     </div>
     <div className="grid gap-3 rounded-lg border border-line bg-gray-50 p-4">
       <div>
@@ -829,7 +867,7 @@ function ChannelsTab({ shares, deliveries, selectedProject, channelOptions, chan
     <div className="overflow-x-auto rounded-lg border border-line">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-muted"><tr><th className="px-3 py-2 text-left">时间</th><th className="px-3 py-2 text-left">渠道</th><th className="px-3 py-2 text-left">接收人</th><th className="px-3 py-2 text-left">状态</th><th className="px-3 py-2 text-left">消息/错误</th><th className="px-3 py-2 text-left">操作</th></tr></thead>
-        <tbody>{deliveries.map((item) => <tr key={item.id} className="border-t border-line"><td className="px-3 py-2">{new Date(item.createdAt).toLocaleString()}</td><td className="px-3 py-2">{channelLabels[item.channel] || item.channel}</td><td className="px-3 py-2"><div>{item.recipientName || item.recipient}</div><div className="text-xs text-muted">{item.providerRef || item.sentAt || ""}</div></td><td className="px-3 py-2">{deliveryStatus(item.status)}</td><td className="max-w-[320px] truncate px-3 py-2" title={item.error || item.message || ""}>{item.error || item.message || "-"}</td><td className="px-3 py-2"><button className="rounded-md border border-line px-2 py-1 text-xs text-primary disabled:text-muted" disabled={item.status === "sent" || item.status === "sending"} onClick={() => sendDelivery(item.id)}>{item.status === "failed" ? "重试" : "发送"}</button></td></tr>)}</tbody>
+        <tbody>{deliveries.map((item) => <tr key={item.id} className="border-t border-line"><td className="px-3 py-2">{new Date(item.createdAt).toLocaleString()}</td><td className="px-3 py-2">{channelLabels[item.channel] || item.channel}</td><td className="px-3 py-2"><div>{item.recipientName || item.recipient}</div><div className="text-xs text-muted">{item.providerRef || item.sentAt || ""}</div></td><td className="px-3 py-2">{deliveryStatus(item.status)}</td><td className="max-w-[320px] truncate px-3 py-2" title={item.error || item.message || ""}>{item.error || item.message || "-"}</td><td className="px-3 py-2"><div className="flex flex-wrap gap-1"><button className="rounded-md border border-line px-2 py-1 text-xs text-primary disabled:text-muted" disabled={item.status === "sent" || item.status === "sending" || item.status === "delivered"} onClick={() => sendDelivery(item.id)}>{item.status === "failed" ? "重试" : "发送"}</button><button className="rounded-md border border-line px-2 py-1 text-xs text-primary disabled:text-muted" disabled={item.status !== "sent"} onClick={() => updateDeliveryReceipt(item.id, "delivered")}>送达</button><button className="rounded-md border border-line px-2 py-1 text-xs text-red-600 disabled:text-muted" disabled={item.status !== "sent"} onClick={() => updateDeliveryReceipt(item.id, "failed")}>失败</button></div></td></tr>)}</tbody>
       </table>
     </div>
   </section>
@@ -1601,6 +1639,16 @@ function qualitySummary(submissions: Submission[]) {
 
 function loadProjects() {
   return authedJson<Project[]>("/api/v1/projects").catch(() => authedJson<Project[]>("/api/v1/satisfaction/projects"))
+}
+
+function cleanProjects(projects: Project[]) {
+  return projects.filter((project) => project.name && !/404 page not found/i.test(project.name))
+}
+
+function readableError(error: unknown) {
+  const message = error instanceof Error ? error.message : "加载失败"
+  if (/404 page not found/i.test(message)) return "项目接口未连接或旧路由残留，请刷新后重试"
+  return message
 }
 
 async function loadSatisfactionAnalysis(projectId: string) {

@@ -1,0 +1,358 @@
+---
+import "../styles/global.css"
+
+const capabilities = [
+  {
+    eyebrow: "Project Root",
+    title: "项目作为业务根节点",
+    body: "调查、随访、投诉、指标、数据、渠道、审核、分析和整改都挂在项目生命周期下，不再散落成孤立入口。",
+    points: ["项目列表 / 新建 / 属性编辑 / 项目看板拆分", "角色人员、任务模板、期次、能力模块独立配置", "渠道发布、答卷入库、质控审核、分析整改按项目聚合"],
+  },
+  {
+    eyebrow: "Patient 360",
+    title: "患者 360 与真实数据库主链",
+    body: "患者主索引、就诊记录和临床事实已经落入 MySQL，Patient 360 能聚合诊断、既往史、用药、检验、检查、随访和访谈事实。",
+    points: ["patients / clinical_visits 数据库 upsert", "HIS、EMR、LIS、PACS、随访和访谈字段映射", "满意度分析可按科室、医生、病种、就诊类型维度聚合"],
+  },
+  {
+    eyebrow: "Collection",
+    title: "表单、渠道和触达闭环",
+    body: "问卷表单支持发布版本，项目渠道可生成 Web、二维码、平板、短信、微信、企业微信、小程序和电话触达任务。",
+    points: ["公开链接绑定指定表单版本", "患者验证后自动拉取就诊信息", "短信/微信/电话接口配置与触达任务统一管理"],
+  },
+  {
+    eyebrow: "Quality & Analysis",
+    title: "数据清洗、审核和管理分析",
+    body: "答卷不只保存结果，还进入质量状态、人工审核、指标聚合、问题台账和整改闭环。",
+    points: ["重复、时长、同号、全同选项等规则可配置", "指标体系支持层级、权重、服务环节、国考映射", "GraphQL 聚合趋势、交叉分析、岗位分析和短板定位"],
+  },
+]
+
+const usage = [
+  ["01", "建项目", "选择业务类型、调查对象、周期、表单版本和项目能力模块。"],
+  ["02", "配数据", "绑定数据源协议，补齐患者、就诊、病历、用药、检验、检查和随访字段映射。"],
+  ["03", "发布渠道", "生成 Web/二维码/平板入口，或通过短信、微信、电话触达收件人。"],
+  ["04", "审质量", "按规则清洗答卷，人工复核可疑样本，保留审核日志。"],
+  ["05", "看分析", "从指标、科室、医生、病种、就诊类型和趋势维度查看分析。"],
+  ["06", "做整改", "低分、投诉、负面建议生成问题台账，分派、复评和关闭。"],
+]
+
+const coreModules = [
+  { title: "项目管理", href: "/projects", desc: "项目列表、新建项目、属性编辑、看板、生命周期和任务模板。", tags: ["项目根节点", "角色人员", "期次管理"] },
+  { title: "表单设计", href: "/design", desc: "维护问卷/访谈采集模板，发布正式版本后被项目绑定。", tags: ["题库组件", "版本发布", "患者验证"] },
+  { title: "数据源", href: "/sources", desc: "配置 HIS、EMR、LIS、PACS、随访和投诉等数据接口与字段映射。", tags: ["协议配置", "字段映射", "质量规则"] },
+  { title: "患者管理", href: "/patients", desc: "查看患者主索引、就诊记录、随访入口和 Patient 360。", tags: ["真实入库", "就诊记录", "临床事实"] },
+  { title: "数据中心", href: "/data-center/reports", desc: "集中查看数据集、指标体系、评价投诉和分析报表。", tags: ["指标分析", "投诉评价", "报表查询"] },
+  { title: "配置中心", href: "/config/channels", desc: "维护短信、微信、企业微信、小程序、SIP 电话等接口配置。", tags: ["触达接口", "SIP 网关", "存储配置"] },
+]
+
+const projectSteps = [
+  ["项目概况", "填写名称、业务类型、调查对象、周期、目标样本、实名/匿名、患者验证等基础属性。"],
+  ["生命周期", "按草稿、发布、质控审核、分析整改、结束归档推进，每一步都有对应待办。"],
+  ["角色人员", "配置项目负责人、执行人、审核人、科室角色和可见范围，后续权限以项目为边界。"],
+  ["任务模板", "把发布、电话随访、答卷审核、分析报告、问题整改配置成可执行任务模板。"],
+  ["表单数据", "绑定已发布表单版本，配置验证字段、自动带入字段和项目数据范围。"],
+  ["能力模块", "按项目启用渠道、答卷、指标、清洗、分析、整改等能力，不需要的模块可以关闭。"],
+]
+
+const formSteps = [
+  ["设计模板", "在表单设计中维护满意度问卷、投诉评价、访谈采集单、随访量表。"],
+  ["绑定数据", "题目可以绑定患者、就诊、科室、医生、诊断、用药、检查检验等系统字段。"],
+  ["发布版本", "正式项目优先选择已发布版本。公开问卷会绑定指定版本，避免发布后结构漂移。"],
+  ["项目引用", "项目的“表单数据”页选择问卷/访谈模板，设置匿名、患者验证、自动带入和可编辑范围。"],
+]
+
+const mappingGroups = [
+  { name: "患者主索引", fields: ["patient.patientNo", "patient.name", "patient.gender", "patient.phone", "patient.medicalRecordNo"] },
+  { name: "就诊记录", fields: ["visit.visitNo", "visit.visitType", "visit.departmentName", "visit.attendingDoctor", "visit.diagnosisName"] },
+  { name: "电子病历/病例", fields: ["record.recordNo", "record.recordType", "record.chiefComplaint", "record.presentIllness"] },
+  { name: "诊断/既往史", fields: ["diagnosis.diagnosisName", "diagnosis.diagnosisCode", "history.content", "history.recordedAt"] },
+  { name: "用药", fields: ["medication.drugName", "medication.dosage", "medication.frequency", "medication.route"] },
+  { name: "检验检查", fields: ["lab.reportNo", "labResult.itemName", "labResult.resultValue", "exam.examName", "exam.reportConclusion"] },
+]
+
+const dataSourceSteps = [
+  ["选协议", "按实际系统选择 REST/JSON、SOAP/XML、gRPC、HL7 v2、DICOM、MySQL 或 PostgreSQL。"],
+  ["填连接", "配置 Endpoint、凭据引用、rowPath、分页、增量字段、超时、重试和批大小。"],
+  ["补映射", "用数据域模板快速补齐患者、就诊、病历、用药、检验、检查、随访字段。"],
+  ["查质量", "启用必填、去重、隔离无效、权限范围和科室/项目可见范围。"],
+  ["跑同步", "用样例报文验证映射，再执行同步；结果写入 patients、clinical_visits 和临床事实表。"],
+]
+
+const roadmap = [
+  { phase: "已收口", title: "产品化主流程", items: ["指标树、批量导入、题目选择绑定和国考映射", "题库复用、矩阵题、跳转/关联显示、发布版本锁定", "渠道回执、失败重试、发送统计和最近回执"] },
+  { phase: "中期", title: "管理分析增强", items: ["重要性矩阵、方差/相关性分析", "五级质控、调查员管理", "整改催办、超期提醒、前后指标对比"] },
+  { phase: "长期", title: "智能洞察与生态", items: ["开放题情绪和主题聚类", "根因分析与自动改进建议", "国考对标、Word/PDF 自动报告"] },
+]
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Reporter 患者满意度、随访、投诉和医疗数据分析平台能力总览" />
+    <title>Reporter 平台能力总览</title>
+  </head>
+  <body class="bg-[#f6f8fb] text-ink">
+    <main class="snap-y snap-mandatory overflow-y-auto scroll-smooth">
+      <section class="min-h-screen snap-start border-b border-line bg-white">
+        <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[0.9fr_1.1fr] lg:px-10">
+          <div class="flex flex-col justify-center">
+            <a href="/" class="mb-10 inline-flex w-fit items-center gap-3 text-sm font-semibold text-primary">
+              <span class="grid h-9 w-9 place-items-center rounded-lg bg-primary text-white">R</span>
+              Reporter 平台
+            </a>
+            <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Patient Experience Platform</p>
+            <h1 class="mt-5 max-w-3xl text-5xl font-bold leading-tight tracking-normal text-ink md:text-7xl">把满意度、随访、投诉和医疗数据放进同一个项目闭环</h1>
+            <p class="mt-6 max-w-2xl text-lg leading-8 text-muted">当前平台已经具备项目管理、表单发布、患者验证、真实入库、Patient 360、渠道触达、数据清洗、指标分析和整改闭环的主干能力。</p>
+            <div class="mt-8 flex flex-wrap gap-3">
+              <a class="rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white" href="/projects">进入项目</a>
+              <a class="rounded-lg border border-line bg-white px-5 py-3 text-sm font-semibold text-ink" href="/data-center/reports">查看分析报表</a>
+            </div>
+          </div>
+          <div class="relative flex items-center">
+            <div class="w-full rounded-lg border border-line bg-surface shadow-2xl shadow-slate-200">
+              <div class="border-b border-line px-5 py-4">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <p class="text-sm font-semibold text-muted">项目看板</p>
+                    <h2 class="mt-1 text-2xl font-bold">患者就诊满意度调查</h2>
+                  </div>
+                  <span class="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-primary">发布中</span>
+                </div>
+              </div>
+              <div class="grid gap-4 p-5 md:grid-cols-3">
+                <div class="rounded-lg border border-line p-4">
+                  <p class="text-sm text-muted">有效样本</p>
+                  <strong class="mt-3 block text-4xl">1,248</strong>
+                  <p class="mt-2 text-sm text-success">清洗通过 92%</p>
+                </div>
+                <div class="rounded-lg border border-line p-4">
+                  <p class="text-sm text-muted">综合满意度</p>
+                  <strong class="mt-3 block text-4xl">86.4</strong>
+                  <p class="mt-2 text-sm text-warning">候诊体验偏低</p>
+                </div>
+                <div class="rounded-lg border border-line p-4">
+                  <p class="text-sm text-muted">整改问题</p>
+                  <strong class="mt-3 block text-4xl">18</strong>
+                  <p class="mt-2 text-sm text-primary">6 项待复评</p>
+                </div>
+              </div>
+              <div class="grid gap-4 border-t border-line p-5 lg:grid-cols-[1.2fr_0.8fr]">
+                <div class="rounded-lg bg-gray-50 p-4">
+                  <div class="mb-4 flex items-center justify-between">
+                    <h3 class="font-semibold">指标得分</h3>
+                    <span class="text-sm text-muted">按权重聚合</span>
+                  </div>
+                  {["医生沟通", "护理服务", "候诊体验", "检查检验", "环境设施"].map((name, index) => (
+                    <div class="mb-3 grid grid-cols-[5rem_1fr_3rem] items-center gap-3 text-sm">
+                      <span class="text-muted">{name}</span>
+                      <span class="h-2 rounded-full bg-white"><span class="block h-2 rounded-full bg-primary" style={`width:${[88, 91, 72, 84, 80][index]}%`}></span></span>
+                      <span class="text-right font-semibold">{[88, 91, 72, 84, 80][index]}</span>
+                    </div>
+                  ))}
+                </div>
+                <div class="rounded-lg bg-gray-50 p-4">
+                  <h3 class="font-semibold">Patient 360</h3>
+                  <div class="mt-4 space-y-3 text-sm">
+                    <p class="rounded-md bg-white p-3">患者、就诊、诊断、用药、检验、检查统一聚合</p>
+                    <p class="rounded-md bg-white p-3">问卷、随访、投诉和访谈事实进入同一分析链路</p>
+                    <p class="rounded-md bg-white p-3">权限范围按项目、角色、科室控制</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start border-b border-line bg-[#f6f8fb]">
+        <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
+          <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Capabilities</p>
+          <h2 class="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">平台现在能做什么</h2>
+          <div class="mt-10 grid gap-5 lg:grid-cols-4">
+            {capabilities.map((item) => (
+              <article class="flex min-h-[26rem] flex-col rounded-lg border border-line bg-white p-6">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{item.eyebrow}</p>
+                <h3 class="mt-4 text-2xl font-bold leading-snug">{item.title}</h3>
+                <p class="mt-4 leading-7 text-muted">{item.body}</p>
+                <ul class="mt-auto space-y-3 pt-8 text-sm text-ink">
+                  {item.points.map((point) => <li class="border-t border-line pt-3">{point}</li>)}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start border-b border-line bg-white">
+        <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[0.7fr_1.3fr] lg:px-10">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Workflow</p>
+            <h2 class="mt-4 text-4xl font-bold leading-tight md:text-6xl">怎么使用</h2>
+            <p class="mt-6 text-lg leading-8 text-muted">从项目开始，而不是从单个表单或单条链接开始。项目负责组织角色、任务、数据、渠道、质控、分析和整改。</p>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2">
+            {usage.map(([step, title, text]) => (
+              <article class="rounded-lg border border-line bg-surface p-5">
+                <div class="flex items-center gap-4">
+                  <span class="grid h-12 w-12 place-items-center rounded-lg bg-blue-50 text-sm font-bold text-primary">{step}</span>
+                  <h3 class="text-xl font-bold">{title}</h3>
+                </div>
+                <p class="mt-4 leading-7 text-muted">{text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start border-b border-line bg-[#f6f8fb]">
+        <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
+          <div class="flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Navigation</p>
+              <h2 class="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">核心功能从哪里进入</h2>
+            </div>
+            <p class="max-w-xl text-base leading-7 text-muted">日常使用建议按“项目 -> 表单 -> 数据源 -> 渠道 -> 审核 -> 分析整改”走。系统管理和接口配置作为支撑能力。</p>
+          </div>
+          <div class="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {coreModules.map((item) => (
+              <a href={item.href} class="rounded-lg border border-line bg-white p-5 transition hover:border-primary hover:shadow-lg hover:shadow-slate-200">
+                <div class="flex items-start justify-between gap-4">
+                  <h3 class="text-xl font-bold">{item.title}</h3>
+                  <span class="text-sm font-semibold text-primary">进入</span>
+                </div>
+                <p class="mt-3 min-h-14 leading-7 text-muted">{item.desc}</p>
+                <div class="mt-5 flex flex-wrap gap-2">
+                  {item.tags.map((tag) => <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-primary">{tag}</span>)}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start border-b border-line bg-white">
+        <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[0.8fr_1.2fr] lg:px-10">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Project Setup</p>
+            <h2 class="mt-4 text-4xl font-bold leading-tight md:text-6xl">项目怎么配置才不乱</h2>
+            <p class="mt-6 text-lg leading-8 text-muted">项目是业务闭环的根，项目属性只管“这个项目是什么”；具体执行能力拆到子页面，避免把所有事情塞进一个巨大的表单。</p>
+            <div class="mt-8 rounded-lg border border-blue-200 bg-blue-50 p-5 text-primary">
+              <p class="font-semibold">推荐路径</p>
+              <p class="mt-2 leading-7">先建项目和生命周期，再配角色人员与任务模板，最后绑定表单数据、发布渠道、质控清洗和分析整改。</p>
+            </div>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2">
+            {projectSteps.map(([title, text], index) => (
+              <article class="rounded-lg border border-line bg-surface p-5">
+                <span class="grid h-9 w-9 place-items-center rounded-lg bg-blue-50 text-sm font-bold text-primary">{index + 1}</span>
+                <h3 class="mt-4 text-xl font-bold">{title}</h3>
+                <p class="mt-3 leading-7 text-muted">{text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start border-b border-line bg-[#f6f8fb]">
+        <div class="mx-auto grid min-h-screen max-w-7xl content-center gap-10 px-6 py-16 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Forms & Data</p>
+            <h2 class="mt-4 max-w-3xl text-4xl font-bold leading-tight md:text-6xl">表单不是孤立问卷，要和数据绑定</h2>
+            <div class="mt-8 grid gap-4 md:grid-cols-2">
+              {formSteps.map(([title, text], index) => (
+                <article class="rounded-lg border border-line bg-white p-5">
+                  <span class="text-sm font-bold text-primary">0{index + 1}</span>
+                  <h3 class="mt-3 text-xl font-bold">{title}</h3>
+                  <p class="mt-3 leading-7 text-muted">{text}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div class="rounded-lg border border-line bg-white p-5 shadow-xl shadow-slate-200">
+            <h3 class="text-xl font-bold">项目表单数据配置重点</h3>
+            <div class="mt-5 space-y-4 text-sm">
+              <div class="rounded-lg bg-gray-50 p-4">
+                <p class="font-semibold">患者验证</p>
+                <p class="mt-2 leading-6 text-muted">微信 OpenID、就诊号、病案号、患者号加手机号验证。验证通过后拉取患者和就诊信息。</p>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-4">
+                <p class="font-semibold">自动带入</p>
+                <p class="mt-2 leading-6 text-muted">姓名、性别、年龄、手机号、就诊日期、科室、医生、诊断等由系统带入，患者只填调查内容。</p>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-4">
+                <p class="font-semibold">版本锁定</p>
+                <p class="mt-2 leading-6 text-muted">项目发布后公开问卷绑定指定表单版本。需要改题时发布新版本，不直接改历史结构。</p>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-4">
+                <p class="font-semibold">指标绑定</p>
+                <p class="mt-2 leading-6 text-muted">题目绑定满意度指标，后续分析按指标体系、权重和服务环节聚合，而不是按题目 ID 生硬统计。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start border-b border-line bg-white">
+        <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
+          <div class="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+            <div>
+              <p class="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Data Source</p>
+              <h2 class="mt-4 text-4xl font-bold leading-tight md:text-6xl">数据源和字段映射怎么配</h2>
+              <p class="mt-6 text-lg leading-8 text-muted">数据源页负责把院内接口、库表、HL7/DICOM 消息和外部系统字段转成平台标准字段。同步结果直接进入数据库，供患者 360、项目分析和报表使用。</p>
+            </div>
+            <div class="grid gap-4 md:grid-cols-5">
+              {dataSourceSteps.map(([title, text], index) => (
+                <article class="rounded-lg border border-line bg-surface p-4 md:col-span-1 lg:col-span-1">
+                  <span class="text-sm font-bold text-primary">{index + 1}</span>
+                  <h3 class="mt-3 font-bold">{title}</h3>
+                  <p class="mt-3 text-sm leading-6 text-muted">{text}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+          <div class="mt-10 rounded-lg border border-line bg-surface p-5">
+            <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
+              <h3 class="text-xl font-bold">标准字段映射模板</h3>
+              <span class="text-sm text-muted">数据源页可按数据域快速补齐这些字段</span>
+            </div>
+            <div class="grid gap-4 lg:grid-cols-3">
+              {mappingGroups.map((group) => (
+                <article class="rounded-lg border border-line bg-white p-4">
+                  <h4 class="font-semibold">{group.name}</h4>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    {group.fields.map((field) => <code class="rounded-md bg-gray-100 px-2 py-1 text-xs text-ink">{field}</code>)}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="min-h-screen snap-start bg-[#101827] text-white">
+        <div class="mx-auto flex min-h-screen max-w-7xl flex-col justify-center px-6 py-16 lg:px-10">
+          <p class="text-sm font-semibold uppercase tracking-[0.18em] text-blue-200">Roadmap</p>
+          <h2 class="mt-4 max-w-4xl text-4xl font-bold leading-tight md:text-6xl">中长期开发计划</h2>
+          <div class="mt-10 grid gap-5 lg:grid-cols-3">
+            {roadmap.map((item) => (
+              <article class="rounded-lg border border-white/15 bg-white/5 p-6">
+                <p class="text-sm font-semibold text-blue-200">{item.phase}</p>
+                <h3 class="mt-3 text-2xl font-bold">{item.title}</h3>
+                <ul class="mt-8 space-y-4 text-slate-200">
+                  {item.items.map((task) => <li class="border-t border-white/10 pt-4">{task}</li>)}
+                </ul>
+              </article>
+            ))}
+          </div>
+          <div class="mt-10 flex flex-wrap gap-3">
+            <a class="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-[#101827]" href="/projects">按项目管理业务</a>
+            <a class="rounded-lg border border-white/20 px-5 py-3 text-sm font-semibold text-white" href="/sources">配置数据接口</a>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
