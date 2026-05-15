@@ -1016,242 +1016,91 @@ func (s *Store) DeleteUser(id string) (domain.User, error) {
 }
 
 func (s *Store) Patients(keyword string) []domain.Patient {
-	if patients, err := s.dbPatients(context.Background(), keyword); err == nil {
-		return patients
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	keyword = strings.TrimSpace(strings.ToLower(keyword))
-	patients := make([]domain.Patient, 0, len(s.patients))
-	for _, patient := range s.patients {
-		if keyword == "" ||
-			strings.Contains(strings.ToLower(patient.ID), keyword) ||
-			strings.Contains(strings.ToLower(patient.PatientNo), keyword) ||
-			strings.Contains(strings.ToLower(patient.Name), keyword) ||
-			strings.Contains(strings.ToLower(patient.Phone), keyword) ||
-			strings.Contains(strings.ToLower(patient.Diagnosis), keyword) {
-			patients = append(patients, patient)
-		}
-	}
+	patients, _ := s.PatientsStrict(context.Background(), keyword)
 	return patients
 }
 
+func (s *Store) PatientsStrict(ctx context.Context, keyword string) ([]domain.Patient, error) {
+	return s.dbPatients(ctx, keyword)
+}
+
 func (s *Store) Patient(id string) (domain.Patient, bool) {
-	if patient, ok, err := s.dbPatient(context.Background(), id); err == nil {
-		return patient, ok
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	patient, ok := s.patients[id]
+	patient, ok, _ := s.PatientStrict(context.Background(), id)
 	return patient, ok
 }
 
+func (s *Store) PatientStrict(ctx context.Context, id string) (domain.Patient, bool, error) {
+	return s.dbPatient(ctx, id)
+}
+
 func (s *Store) CreatePatient(patient domain.Patient) domain.Patient {
-	if created, err := s.dbCreatePatient(context.Background(), patient); err == nil {
-		return created
+	created, err := s.CreatePatientStrict(context.Background(), patient)
+	if err != nil {
+		return domain.Patient{}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	if patient.ID == "" {
-		patient.ID = uuid.NewString()
-	}
-	if patient.Status == "" {
-		patient.Status = "active"
-	}
-	patient.CreatedAt = now
-	patient.UpdatedAt = now
-	s.patients[patient.ID] = patient
-	return patient
+	return created
+}
+
+func (s *Store) CreatePatientStrict(ctx context.Context, patient domain.Patient) (domain.Patient, error) {
+	return s.dbCreatePatient(ctx, patient)
 }
 
 func (s *Store) UpdatePatient(id string, patch domain.Patient) (domain.Patient, error) {
-	if updated, err := s.dbUpdatePatient(context.Background(), id, patch); err == nil || err == ErrNotFound {
-		return updated, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	patient, ok := s.patients[id]
-	if !ok {
-		return domain.Patient{}, ErrNotFound
-	}
-	if patch.PatientNo != "" {
-		patient.PatientNo = patch.PatientNo
-	}
-	if patch.Name != "" {
-		patient.Name = patch.Name
-	}
-	if patch.Gender != "" {
-		patient.Gender = patch.Gender
-	}
-	if patch.Age != 0 {
-		patient.Age = patch.Age
-	}
-	if patch.Phone != "" {
-		patient.Phone = patch.Phone
-	}
-	if patch.Diagnosis != "" {
-		patient.Diagnosis = patch.Diagnosis
-	}
-	if patch.Status != "" {
-		patient.Status = patch.Status
-	}
-	if patch.LastVisitAt != "" {
-		patient.LastVisitAt = patch.LastVisitAt
-	}
-	if patch.MedicalRecordNo != "" {
-		patient.MedicalRecordNo = patch.MedicalRecordNo
-	}
-	if patch.BirthDate != "" {
-		patient.BirthDate = patch.BirthDate
-	}
-	if patch.IDCardNo != "" {
-		patient.IDCardNo = patch.IDCardNo
-	}
-	if patch.Address != "" {
-		patient.Address = patch.Address
-	}
-	if patch.Nationality != "" {
-		patient.Nationality = patch.Nationality
-	}
-	if patch.Ethnicity != "" {
-		patient.Ethnicity = patch.Ethnicity
-	}
-	if patch.MaritalStatus != "" {
-		patient.MaritalStatus = patch.MaritalStatus
-	}
-	if patch.InsuranceType != "" {
-		patient.InsuranceType = patch.InsuranceType
-	}
-	if patch.BloodType != "" {
-		patient.BloodType = patch.BloodType
-	}
-	if patch.Allergies != nil {
-		patient.Allergies = patch.Allergies
-	}
-	if patch.EmergencyContact != "" {
-		patient.EmergencyContact = patch.EmergencyContact
-	}
-	if patch.EmergencyPhone != "" {
-		patient.EmergencyPhone = patch.EmergencyPhone
-	}
-	if patch.SourceRefs != nil {
-		patient.SourceRefs = patch.SourceRefs
-	}
-	patient.UpdatedAt = time.Now().UTC()
-	s.patients[id] = patient
-	return patient, nil
+	return s.dbUpdatePatient(context.Background(), id, patch)
 }
 
 func (s *Store) UpsertPatientByNo(patient domain.Patient) (domain.Patient, bool) {
-	if saved, created, err := s.dbUpsertPatientByNo(context.Background(), patient); err == nil {
-		return saved, created
+	saved, created, err := s.UpsertPatientByNoStrict(context.Background(), patient)
+	if err != nil {
+		return domain.Patient{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	for id, existing := range s.patients {
-		if existing.PatientNo != "" && existing.PatientNo == patient.PatientNo {
-			patient.ID = id
-			patient.CreatedAt = existing.CreatedAt
-			patient.UpdatedAt = now
-			if patient.Status == "" {
-				patient.Status = existing.Status
-			}
-			s.patients[id] = patient
-			return patient, false
-		}
-	}
-	if patient.ID == "" {
-		patient.ID = uuid.NewString()
-	}
-	if patient.Status == "" {
-		patient.Status = "active"
-	}
-	patient.CreatedAt = now
-	patient.UpdatedAt = now
-	s.patients[patient.ID] = patient
-	return patient, true
+	return saved, created
+}
+
+func (s *Store) UpsertPatientByNoStrict(ctx context.Context, patient domain.Patient) (domain.Patient, bool, error) {
+	return s.dbUpsertPatientByNo(ctx, patient)
 }
 
 func (s *Store) Visits(patientID string) []domain.ClinicalVisit {
-	if visits, err := s.dbVisits(context.Background(), patientID); err == nil {
-		return visits
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	visits := make([]domain.ClinicalVisit, 0, len(s.visits))
-	for _, visit := range s.visits {
-		if patientID == "" || visit.PatientID == patientID {
-			visits = append(visits, visit)
-		}
-	}
+	visits, _ := s.VisitsStrict(context.Background(), patientID)
 	return visits
 }
 
+func (s *Store) VisitsStrict(ctx context.Context, patientID string) ([]domain.ClinicalVisit, error) {
+	return s.dbVisits(ctx, patientID)
+}
+
 func (s *Store) UpsertVisitByNo(visit domain.ClinicalVisit) (domain.ClinicalVisit, bool) {
-	if saved, created, err := s.dbUpsertVisitByNo(context.Background(), visit); err == nil {
-		return saved, created
+	saved, created, err := s.UpsertVisitByNoStrict(context.Background(), visit)
+	if err != nil {
+		return domain.ClinicalVisit{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	for id, existing := range s.visits {
-		if existing.VisitNo != "" && existing.VisitNo == visit.VisitNo {
-			visit.ID = id
-			visit.CreatedAt = existing.CreatedAt
-			visit.UpdatedAt = now
-			if visit.Status == "" {
-				visit.Status = existing.Status
-			}
-			s.visits[id] = visit
-			return visit, false
-		}
-	}
-	if visit.ID == "" {
-		visit.ID = uuid.NewString()
-	}
-	if visit.Status == "" {
-		visit.Status = "active"
-	}
-	visit.CreatedAt = now
-	visit.UpdatedAt = now
-	s.visits[visit.ID] = visit
-	return visit, true
+	return saved, created
+}
+
+func (s *Store) UpsertVisitByNoStrict(ctx context.Context, visit domain.ClinicalVisit) (domain.ClinicalVisit, bool, error) {
+	return s.dbUpsertVisitByNo(ctx, visit)
 }
 
 func (s *Store) MedicalRecords(patientID string) []domain.MedicalRecord {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	records := make([]domain.MedicalRecord, 0, len(s.records))
-	for _, record := range s.records {
-		if patientID == "" || record.PatientID == patientID {
-			records = append(records, record)
-		}
-	}
+	records, _ := s.MedicalRecordsStrict(context.Background(), patientID)
 	return records
 }
 
+func (s *Store) MedicalRecordsStrict(ctx context.Context, patientID string) ([]domain.MedicalRecord, error) {
+	return s.dbMedicalRecords(ctx, patientID)
+}
+
 func (s *Store) UpsertMedicalRecordByNo(record domain.MedicalRecord) (domain.MedicalRecord, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	for id, existing := range s.records {
-		if existing.RecordNo != "" && existing.RecordNo == record.RecordNo {
-			record.ID = id
-			record.CreatedAt = existing.CreatedAt
-			record.UpdatedAt = now
-			s.records[id] = record
-			return record, false
-		}
+	saved, created, err := s.UpsertMedicalRecordByNoStrict(context.Background(), record)
+	if err != nil {
+		return domain.MedicalRecord{}, false
 	}
-	if record.ID == "" {
-		record.ID = uuid.NewString()
-	}
-	record.CreatedAt = now
-	record.UpdatedAt = now
-	s.records[record.ID] = record
-	return record, true
+	return saved, created
+}
+
+func (s *Store) UpsertMedicalRecordByNoStrict(ctx context.Context, record domain.MedicalRecord) (domain.MedicalRecord, bool, error) {
+	return s.dbUpsertMedicalRecordByNo(ctx, record)
 }
 
 func (s *Store) Datasets(keyword string) []domain.Dataset {
@@ -1375,279 +1224,161 @@ func (s *Store) AuditLogs() []domain.AuditLog {
 }
 
 func (s *Store) Forms() []domain.Form {
-	if forms, err := s.formsFromSQL(context.Background()); err == nil {
-		return forms
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	forms := make([]domain.Form, 0, len(s.forms))
-	for _, form := range s.forms {
-		forms = append(forms, form)
+	forms, err := s.FormsStrict(context.Background())
+	if err != nil {
+		return nil
 	}
 	return forms
 }
 
+func (s *Store) FormsStrict(ctx context.Context) ([]domain.Form, error) {
+	return s.formsFromSQL(ctx)
+}
+
 func (s *Store) CreateForm(form domain.Form) domain.Form {
-	if saved, err := s.createFormInSQL(context.Background(), form); err == nil {
-		return saved
+	saved, err := s.CreateFormStrict(context.Background(), form)
+	if err != nil {
+		return domain.Form{}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	form.ID = uuid.NewString()
-	form.Status = "draft"
-	form.CreatedAt = now
-	form.UpdatedAt = now
-	s.forms[form.ID] = form
-	return form
+	return saved
+}
+
+func (s *Store) CreateFormStrict(ctx context.Context, form domain.Form) (domain.Form, error) {
+	return s.createFormInSQL(ctx, form)
 }
 
 func (s *Store) CreateFormVersion(formID, actor string, schema []domain.FormComponent) (domain.FormVersion, error) {
-	if version, err := s.createFormVersionInSQL(context.Background(), formID, actor, schema); err == nil {
-		return version, nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	form, ok := s.forms[formID]
-	if !ok {
-		return domain.FormVersion{}, ErrNotFound
-	}
-	version := domain.FormVersion{
-		ID:        uuid.NewString(),
-		FormID:    formID,
-		Version:   len(form.Versions) + 1,
-		Schema:    schema,
-		CreatedBy: actor,
-		CreatedAt: time.Now().UTC(),
-	}
-	form.Versions = append(form.Versions, version)
-	form.UpdatedAt = version.CreatedAt
-	s.forms[formID] = form
-	return version, nil
+	return s.CreateFormVersionStrict(context.Background(), formID, actor, schema)
+}
+
+func (s *Store) CreateFormVersionStrict(ctx context.Context, formID, actor string, schema []domain.FormComponent) (domain.FormVersion, error) {
+	return s.createFormVersionInSQL(ctx, formID, actor, schema)
 }
 
 func (s *Store) PublishForm(formID string) (domain.Form, error) {
-	if form, err := s.publishFormInSQL(context.Background(), formID); err == nil {
-		return form, nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	form, ok := s.forms[formID]
-	if !ok {
-		return domain.Form{}, ErrNotFound
-	}
-	if len(form.Versions) == 0 {
-		return domain.Form{}, errors.New("form has no version")
-	}
-	for i := range form.Versions {
-		form.Versions[i].Published = false
-	}
-	form.Versions[len(form.Versions)-1].Published = true
-	form.CurrentVersionID = form.Versions[len(form.Versions)-1].ID
-	form.Status = "published"
-	form.UpdatedAt = time.Now().UTC()
-	s.forms[formID] = form
-	return form, nil
+	return s.PublishFormStrict(context.Background(), formID)
+}
+
+func (s *Store) PublishFormStrict(ctx context.Context, formID string) (domain.Form, error) {
+	return s.publishFormInSQL(ctx, formID)
 }
 
 func (s *Store) CreateSubmission(submission domain.Submission) (domain.Submission, error) {
-	if saved, err := s.createSubmissionInSQL(context.Background(), submission); err == nil {
-		return saved, nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	form, ok := s.forms[submission.FormID]
-	if !ok {
-		return domain.Submission{}, ErrNotFound
-	}
-	if submission.FormVersionID == "" {
-		submission.FormVersionID = form.CurrentVersionID
-	}
-	now := time.Now().UTC()
-	submission.ID = uuid.NewString()
-	submission.Status = "submitted"
-	submission.CreatedAt = now
-	submission.UpdatedAt = now
-	s.submissions[submission.ID] = submission
-	return submission, nil
+	return s.CreateSubmissionStrict(context.Background(), submission)
+}
+
+func (s *Store) CreateSubmissionStrict(ctx context.Context, submission domain.Submission) (domain.Submission, error) {
+	return s.createSubmissionInSQL(ctx, submission)
 }
 
 func (s *Store) SubmissionsByForm(formID string) []domain.Submission {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	submissions := []domain.Submission{}
-	for _, submission := range s.submissions {
-		if submission.FormID == formID {
-			submissions = append(submissions, submission)
-		}
+	submissions, err := s.SubmissionsByFormStrict(context.Background(), formID)
+	if err != nil {
+		return nil
 	}
 	return submissions
 }
 
+func (s *Store) SubmissionsByFormStrict(ctx context.Context, formID string) ([]domain.Submission, error) {
+	return s.submissionsByFormFromSQL(ctx, formID)
+}
+
 func (s *Store) Submission(id string) (domain.Submission, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	submission, ok := s.submissions[id]
+	submission, ok, err := s.SubmissionStrict(context.Background(), id)
+	if err != nil {
+		return domain.Submission{}, false
+	}
 	return submission, ok
 }
 
+func (s *Store) SubmissionStrict(ctx context.Context, id string) (domain.Submission, bool, error) {
+	return s.submissionFromSQL(ctx, id)
+}
+
 func (s *Store) DataSources() []domain.DataSource {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	sources := make([]domain.DataSource, 0, len(s.dataSources))
-	for _, source := range s.dataSources {
-		sources = append(sources, source)
+	sources, err := s.DataSourcesStrict(context.Background())
+	if err != nil {
+		return nil
 	}
 	return sources
 }
 
+func (s *Store) DataSourcesStrict(ctx context.Context) ([]domain.DataSource, error) {
+	return s.dataSourcesFromSQL(ctx)
+}
+
 func (s *Store) CreateDataSource(source domain.DataSource) domain.DataSource {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	source.ID = uuid.NewString()
-	source.CreatedAt = now
-	source.UpdatedAt = now
-	s.dataSources[source.ID] = source
-	return source
+	saved, err := s.CreateDataSourceStrict(context.Background(), source)
+	if err != nil {
+		return domain.DataSource{}
+	}
+	return saved
+}
+
+func (s *Store) CreateDataSourceStrict(ctx context.Context, source domain.DataSource) (domain.DataSource, error) {
+	return s.createDataSourceInSQL(ctx, source)
 }
 
 func (s *Store) DataSource(id string) (domain.DataSource, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	source, ok := s.dataSources[id]
+	source, ok, err := s.DataSourceStrict(context.Background(), id)
+	if err != nil {
+		return domain.DataSource{}, false
+	}
 	return source, ok
 }
 
+func (s *Store) DataSourceStrict(ctx context.Context, id string) (domain.DataSource, bool, error) {
+	return s.dataSourceFromSQL(ctx, id)
+}
+
 func (s *Store) UpdateDataSource(id string, patch domain.DataSource) (domain.DataSource, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	source, ok := s.dataSources[id]
-	if !ok {
-		return domain.DataSource{}, ErrNotFound
-	}
-	if patch.Name != "" {
-		source.Name = patch.Name
-	}
-	if patch.Protocol != "" {
-		source.Protocol = patch.Protocol
-	}
-	if patch.Endpoint != "" {
-		source.Endpoint = patch.Endpoint
-	}
-	if patch.Config != nil {
-		source.Config = patch.Config
-	}
-	if patch.Dictionaries != nil {
-		source.Dictionaries = patch.Dictionaries
-	}
-	if patch.FieldMapping != nil {
-		source.FieldMapping = patch.FieldMapping
-	}
-	source.UpdatedAt = time.Now().UTC()
-	s.dataSources[id] = source
-	return source, nil
+	return s.UpdateDataSourceStrict(context.Background(), id, patch)
+}
+
+func (s *Store) UpdateDataSourceStrict(ctx context.Context, id string, patch domain.DataSource) (domain.DataSource, error) {
+	return s.updateDataSourceInSQL(ctx, id, patch)
 }
 
 func (s *Store) DeleteDataSource(id string) (domain.DataSource, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	source, ok := s.dataSources[id]
-	if !ok {
-		return domain.DataSource{}, ErrNotFound
-	}
-	delete(s.dataSources, id)
-	return source, nil
+	return s.DeleteDataSourceStrict(context.Background(), id)
+}
+
+func (s *Store) DeleteDataSourceStrict(ctx context.Context, id string) (domain.DataSource, error) {
+	return s.deleteDataSourceInSQL(ctx, id)
 }
 
 func (s *Store) Reports() []domain.Report {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	reports := make([]domain.Report, 0, len(s.reports))
-	for _, report := range s.reports {
-		reports = append(reports, report)
+	reports, err := s.ReportDefinitions(context.Background())
+	if err != nil {
+		return nil
 	}
 	return reports
 }
 
 func (s *Store) Report(id string) (domain.Report, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	report, ok := s.reports[id]
-	return report, ok
+	report, err := s.ReportDefinition(context.Background(), id)
+	if err != nil {
+		return domain.Report{}, false
+	}
+	return report, true
 }
 
 func (s *Store) CreateReport(report domain.Report) domain.Report {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	report.ID = uuid.NewString()
-	report.CreatedAt = now
-	report.UpdatedAt = now
-	s.reports[report.ID] = report
-	return report
+	saved, err := s.CreateReportDefinition(context.Background(), report)
+	if err != nil {
+		return domain.Report{}
+	}
+	return saved
 }
 
 func (s *Store) UpdateReport(id string, patch domain.Report) (domain.Report, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	report, ok := s.reports[id]
-	if !ok {
-		return domain.Report{}, ErrNotFound
-	}
-	if patch.Name != "" {
-		report.Name = patch.Name
-	}
-	if patch.Description != "" {
-		report.Description = patch.Description
-	}
-	report.UpdatedAt = time.Now().UTC()
-	s.reports[id] = report
-	return report, nil
+	return s.UpdateReportDefinition(context.Background(), id, patch)
 }
 
 func (s *Store) AddReportWidget(reportID string, widget domain.ReportWidget) (domain.ReportWidget, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	report, ok := s.reports[reportID]
-	if !ok {
-		return domain.ReportWidget{}, ErrNotFound
-	}
-	widget.ID = uuid.NewString()
-	widget.ReportID = reportID
-	widget.CreatedAt = time.Now().UTC()
-	report.Widgets = append(report.Widgets, widget)
-	report.UpdatedAt = widget.CreatedAt
-	s.reports[reportID] = report
-	return widget, nil
+	return s.AddReportDefinitionWidget(context.Background(), reportID, widget)
 }
 
 func (s *Store) QueryReport(reportID string) (map[string]interface{}, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if _, ok := s.reports[reportID]; !ok {
-		return nil, ErrNotFound
-	}
-	if reportID == "RP002" {
-		return map[string]interface{}{
-			"dimensions": []string{"department"},
-			"measures":   []string{"satisfaction", "recommendScore", "feedbackCount"},
-			"rows": []map[string]interface{}{
-				{"department": "心内科", "satisfaction": 4.6, "recommendScore": 9.1, "feedbackCount": 82},
-				{"department": "内分泌科", "satisfaction": 4.3, "recommendScore": 8.7, "feedbackCount": 64},
-				{"department": "体检中心", "satisfaction": 4.1, "recommendScore": 8.2, "feedbackCount": 51},
-			},
-		}, nil
-	}
-	return map[string]interface{}{
-		"dimensions": []string{"month"},
-		"measures":   []string{"submissions", "completed", "completionRate"},
-		"rows": []map[string]interface{}{
-			{"month": "2026-01", "submissions": 126, "completed": 112, "completionRate": 88.9},
-			{"month": "2026-02", "submissions": 142, "completed": 130, "completionRate": 91.5},
-			{"month": "2026-03", "submissions": 168, "completed": 151, "completionRate": 89.9},
-			{"month": "2026-04", "submissions": 184, "completed": 167, "completionRate": 90.8},
-			{"month": "2026-05", "submissions": 201, "completed": 188, "completionRate": 93.5},
-		},
-	}, nil
+	return s.QueryReportData(context.Background(), reportID, "")
 }

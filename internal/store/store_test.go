@@ -9,60 +9,50 @@ import (
 func TestFormPublishAndSubmission(t *testing.T) {
 	s := NewTestStore()
 	form := s.CreateForm(domain.Form{Name: "Intake"})
-	version, err := s.CreateFormVersion(form.ID, "1", []domain.FormComponent{{ID: "name", Type: "text", Label: "Name", Required: true}})
-	if err != nil {
-		t.Fatal(err)
+	if form.ID != "" {
+		t.Fatal("expected form creation without database DSN to return no masked memory form")
 	}
-	published, err := s.PublishForm(form.ID)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := s.CreateFormVersion("FORM-001", "1", []domain.FormComponent{{ID: "name", Type: "text", Label: "Name", Required: true}}); err == nil {
+		t.Fatal("expected form version creation without database DSN to fail")
 	}
-	if published.CurrentVersionID != version.ID {
-		t.Fatalf("expected current version %s, got %s", version.ID, published.CurrentVersionID)
+	if _, err := s.PublishForm("FORM-001"); err == nil {
+		t.Fatal("expected form publishing without database DSN to fail")
 	}
-	submission, err := s.CreateSubmission(domain.Submission{FormID: form.ID, SubmitterID: "1", Data: map[string]interface{}{"name": "Ada"}})
-	if err != nil {
-		t.Fatal(err)
+	if _, err := s.CreateSubmission(domain.Submission{FormID: "FORM-001", SubmitterID: "1", Data: map[string]interface{}{"name": "Ada"}}); err == nil {
+		t.Fatal("expected submission creation without database DSN to fail")
 	}
-	if submission.Status != "submitted" || submission.FormVersionID != version.ID {
-		t.Fatal("submission did not inherit published version")
+	if submissions := s.SubmissionsByForm("FORM-001"); len(submissions) != 0 {
+		t.Fatal("expected submissions without database DSN to return no masked memory submissions")
 	}
 }
 
 func TestDataSourceUpdateAndDelete(t *testing.T) {
 	s := NewTestStore()
 	source := s.CreateDataSource(domain.DataSource{Name: "HIS", Protocol: "http", Endpoint: "https://his.local"})
-	updated, err := s.UpdateDataSource(source.ID, domain.DataSource{Name: "HIS API", Config: map[string]interface{}{"timeoutMs": 2000}})
-	if err != nil {
-		t.Fatal(err)
+	if source.ID != "" {
+		t.Fatal("expected data source creation without database DSN to return no masked memory source")
 	}
-	if updated.Name != "HIS API" || updated.Endpoint != "https://his.local" {
-		t.Fatal("update should patch fields without clearing omitted values")
+	if _, err := s.UpdateDataSource("DS-001", domain.DataSource{Name: "HIS API", Config: map[string]interface{}{"timeoutMs": 2000}}); err == nil {
+		t.Fatal("expected data source update without database DSN to fail")
 	}
-	deleted, err := s.DeleteDataSource(source.ID)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := s.DeleteDataSource("DS-001"); err == nil {
+		t.Fatal("expected data source delete without database DSN to fail")
 	}
-	if deleted.ID != source.ID {
-		t.Fatal("deleted source mismatch")
-	}
-	if _, ok := s.DataSource(source.ID); ok {
-		t.Fatal("expected source to be deleted")
+	if _, ok := s.DataSource("DS-001"); ok {
+		t.Fatal("expected data source lookup without database DSN to return no masked memory source")
 	}
 }
 
 func TestPatientSearchAndUpdate(t *testing.T) {
 	s := NewTestStore()
-	results := s.Patients("张三")
-	if len(results) != 1 || results[0].Name != "张三" {
-		t.Fatal("expected patient search to find 张三")
+	if _, err := s.PatientsStrict(t.Context(), "张三"); err == nil {
+		t.Fatal("expected patient search without database DSN to fail")
 	}
-	updated, err := s.UpdatePatient("P001", domain.Patient{Status: "follow_up", Diagnosis: "高血压复诊"})
-	if err != nil {
-		t.Fatal(err)
+	if _, err := s.UpdatePatient("P001", domain.Patient{Status: "follow_up", Diagnosis: "高血压复诊"}); err == nil {
+		t.Fatal("expected patient update without database DSN to fail")
 	}
-	if updated.Status != "follow_up" || updated.Diagnosis != "高血压复诊" {
-		t.Fatal("patient update did not persist")
+	if patient, ok := s.Patient("P001"); ok || patient.ID != "" {
+		t.Fatal("expected patient lookup without database DSN to return no masked memory record")
 	}
 }
 
@@ -93,20 +83,11 @@ func TestDatasetSearchAndUpdate(t *testing.T) {
 
 func TestReportQueryAndWidget(t *testing.T) {
 	s := NewTestStore()
-	result, err := s.QueryReport("RP001")
-	if err != nil {
-		t.Fatal(err)
+	if _, err := s.QueryReport("RP001"); err == nil {
+		t.Fatal("expected report query without database DSN to fail")
 	}
-	rows, ok := result["rows"].([]map[string]interface{})
-	if !ok || len(rows) == 0 {
-		t.Fatal("expected report query rows")
-	}
-	widget, err := s.AddReportWidget("RP001", domain.ReportWidget{Type: "table", Title: "新增明细"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if widget.ReportID != "RP001" || widget.ID == "" {
-		t.Fatal("expected widget to be attached to report")
+	if _, err := s.AddReportWidget("RP001", domain.ReportWidget{Type: "table", Title: "新增明细"}); err == nil {
+		t.Fatal("expected report widget creation without database DSN to fail")
 	}
 }
 

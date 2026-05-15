@@ -77,7 +77,7 @@ ON DUPLICATE KEY UPDATE report_type = VALUES(report_type), name = VALUES(name), 
 		raw, _ := json.Marshal(map[string]string{"source": widget.DataSource})
 		if _, err := db.ExecContext(ctx, `
 INSERT INTO report_widgets (id, report_id, widget_type, title, query_json, vis_spec_json, data_source_id)
-VALUES (?, ?, ?, ?, CAST(? AS JSON), JSON_OBJECT(), NULL)
+VALUES (?, ?, ?, ?, ?, '{}', NULL)
 ON DUPLICATE KEY UPDATE title = VALUES(title), query_json = VALUES(query_json)`,
 			widget.ID, widget.ReportID, widget.Type, widget.Title, string(raw)); err != nil {
 			return err
@@ -244,7 +244,7 @@ func (s *Store) addDBReportWidget(ctx context.Context, reportID string, widget d
 	widget.CreatedAt = time.Now().UTC()
 	widget.Type = firstNonEmptyStore(widget.Type, "table")
 	raw, _ := json.Marshal(map[string]string{"source": widget.DataSource})
-	if _, err := db.ExecContext(ctx, `INSERT INTO report_widgets (id, report_id, widget_type, title, query_json, vis_spec_json, data_source_id) VALUES (?, ?, ?, ?, CAST(? AS JSON), JSON_OBJECT(), NULL)`,
+	if _, err := db.ExecContext(ctx, `INSERT INTO report_widgets (id, report_id, widget_type, title, query_json, vis_spec_json, data_source_id) VALUES (?, ?, ?, ?, ?, '{}', NULL)`,
 		widget.ID, widget.ReportID, widget.Type, widget.Title, string(raw)); err != nil {
 		return domain.ReportWidget{}, err
 	}

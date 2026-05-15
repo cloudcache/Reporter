@@ -204,7 +204,7 @@ func (s *Store) UpsertPatientGroup(ctx context.Context, item domain.PatientGroup
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO patient_groups (id, name, category, mode, assignment_mode, followup_plan_id, rules_json, permissions_json)
-VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), CAST(? AS JSON), CAST(? AS JSON))
+VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?)
 ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), mode = VALUES(mode),
   assignment_mode = VALUES(assignment_mode), followup_plan_id = VALUES(followup_plan_id),
   rules_json = VALUES(rules_json), permissions_json = VALUES(permissions_json)`,

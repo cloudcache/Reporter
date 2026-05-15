@@ -110,16 +110,6 @@ func (s *Store) LoadFollowupConfigFromSQL(ctx context.Context, driver, dsn strin
 		s.followPlans = plans
 	}
 	if len(tasks) > 0 {
-		for id, task := range tasks {
-			if patient, ok := s.patients[task.PatientID]; ok {
-				task.PatientName = patient.Name
-				task.PatientPhone = patient.Phone
-			}
-			if user, ok := s.users[task.AssigneeID]; ok {
-				task.AssigneeName = user.DisplayName
-			}
-			tasks[id] = task
-		}
 		s.followTasks = tasks
 	}
 	return nil
@@ -212,7 +202,7 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), kind = VALUES(kind), status = VALUE
 		}
 		if _, err := db.ExecContext(ctx, `
 INSERT INTO dictionaries (id, code, name, category, description, items_json)
-VALUES (?, ?, ?, ?, ?, CAST(? AS JSON))
+VALUES (?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), description = VALUES(description), items_json = VALUES(items_json)`,
 			item.ID, item.Code, item.Name, item.Category, item.Description, string(raw),
 		); err != nil {
@@ -230,7 +220,7 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), descri
 		}
 		if _, err := db.ExecContext(ctx, `
 INSERT INTO followup_plans (id, name, scenario, disease_code, department_id, form_template_id, trigger_type, trigger_offset, channel, assignee_role, status, rules_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE name = VALUES(name), scenario = VALUES(scenario), disease_code = VALUES(disease_code), department_id = VALUES(department_id), form_template_id = VALUES(form_template_id), trigger_type = VALUES(trigger_type), trigger_offset = VALUES(trigger_offset), channel = VALUES(channel), assignee_role = VALUES(assignee_role), status = VALUES(status), rules_json = VALUES(rules_json)`,
 			plan.ID, plan.Name, plan.Scenario, plan.DiseaseCode, plan.DepartmentID, plan.FormTemplateID, plan.TriggerType, plan.TriggerOffset, plan.Channel, plan.AssigneeRole, plan.Status, string(raw),
 		); err != nil {
@@ -400,11 +390,14 @@ ORDER BY updated_at DESC, id`)
 
 func queryFollowupTasks(ctx context.Context, db *sql.DB) (map[string]domain.FollowupTask, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT id, COALESCE(plan_id, ''), patient_id, COALESCE(visit_id, ''), COALESCE(form_id, ''),
-       COALESCE(form_template_id, ''), COALESCE(assignee_id, ''), COALESCE(role, ''), channel, status, priority,
-       COALESCE(DATE_FORMAT(due_at, '%Y-%m-%d'), ''), COALESCE(CAST(result_json AS CHAR), '{}'), COALESCE(last_event, ''), created_at, updated_at
-FROM followup_tasks
-ORDER BY due_at IS NULL, due_at, updated_at DESC`)
+SELECT t.id, COALESCE(t.plan_id, ''), t.patient_id, COALESCE(t.visit_id, ''), COALESCE(t.form_id, ''),
+       COALESCE(t.form_template_id, ''), COALESCE(t.assignee_id, ''), COALESCE(t.role, ''), t.channel, t.status, t.priority,
+       COALESCE(DATE_FORMAT(t.due_at, '%Y-%m-%d'), ''), COALESCE(CAST(t.result_json AS CHAR), '{}'), COALESCE(t.last_event, ''),
+       t.created_at, t.updated_at, COALESCE(p.name, ''), COALESCE(p.phone, ''), COALESCE(u.display_name, '')
+FROM followup_tasks t
+LEFT JOIN patients p ON p.id = t.patient_id
+LEFT JOIN users u ON u.id = t.assignee_id
+ORDER BY t.due_at IS NULL, t.due_at, t.updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +406,7 @@ ORDER BY due_at IS NULL, due_at, updated_at DESC`)
 	for rows.Next() {
 		var item domain.FollowupTask
 		var raw string
-		if err := rows.Scan(&item.ID, &item.PlanID, &item.PatientID, &item.VisitID, &item.FormID, &item.FormTemplateID, &item.AssigneeID, &item.Role, &item.Channel, &item.Status, &item.Priority, &item.DueAt, &raw, &item.LastEvent, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.PlanID, &item.PatientID, &item.VisitID, &item.FormID, &item.FormTemplateID, &item.AssigneeID, &item.Role, &item.Channel, &item.Status, &item.Priority, &item.DueAt, &raw, &item.LastEvent, &item.CreatedAt, &item.UpdatedAt, &item.PatientName, &item.PatientPhone, &item.AssigneeName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(raw), &item.Result); err != nil {
@@ -422,6 +415,186 @@ ORDER BY due_at IS NULL, due_at, updated_at DESC`)
 		items[item.ID] = item
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) dbFollowupPlan(ctx context.Context, id string) (domain.FollowupPlan, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return domain.FollowupPlan{}, false, err
+	}
+	defer db.Close()
+	plans, err := queryFollowupPlans(ctx, db)
+	if err != nil {
+		return domain.FollowupPlan{}, false, err
+	}
+	plan, ok := plans[id]
+	return plan, ok, nil
+}
+
+func (s *Store) dbFollowupTasks(ctx context.Context, status, assigneeID string) ([]domain.FollowupTask, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	tasks, err := queryFollowupTasks(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.FollowupTask, 0, len(tasks))
+	for _, item := range tasks {
+		if status != "" && item.Status != status {
+			continue
+		}
+		if assigneeID != "" && item.AssigneeID != assigneeID {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (s *Store) dbFollowupTask(ctx context.Context, id string) (domain.FollowupTask, bool, error) {
+	tasks, err := s.dbFollowupTasks(ctx, "", "")
+	if err != nil {
+		return domain.FollowupTask{}, false, err
+	}
+	for _, task := range tasks {
+		if task.ID == id {
+			return task, true, nil
+		}
+	}
+	return domain.FollowupTask{}, false, nil
+}
+
+func (s *Store) dbCreateFollowupTask(ctx context.Context, task domain.FollowupTask) (domain.FollowupTask, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return domain.FollowupTask{}, err
+	}
+	defer db.Close()
+	now := time.Now().UTC()
+	if task.ID == "" {
+		task.ID = uuid.NewString()
+	}
+	if task.Status == "" {
+		task.Status = "pending"
+	}
+	if task.Priority == "" {
+		task.Priority = "normal"
+	}
+	task.CreatedAt = now
+	task.UpdatedAt = now
+	raw, err := json.Marshal(task.Result)
+	if err != nil {
+		return domain.FollowupTask{}, err
+	}
+	if string(raw) == "null" {
+		raw = []byte("{}")
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO followup_tasks (id, plan_id, patient_id, visit_id, form_id, form_template_id, assignee_id, role, channel, status, priority, due_at, result_json, last_event, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE plan_id = VALUES(plan_id), patient_id = VALUES(patient_id), visit_id = VALUES(visit_id), form_id = VALUES(form_id), form_template_id = VALUES(form_template_id), assignee_id = VALUES(assignee_id), role = VALUES(role), channel = VALUES(channel), status = VALUES(status), priority = VALUES(priority), due_at = VALUES(due_at), result_json = VALUES(result_json), last_event = VALUES(last_event), updated_at = VALUES(updated_at)`,
+		task.ID, nullStringStore(task.PlanID), task.PatientID, nullStringStore(task.VisitID), nullStringStore(task.FormID), nullStringStore(task.FormTemplateID), nullStringStore(task.AssigneeID), nullStringStore(task.Role), task.Channel, task.Status, task.Priority, nullStringStore(task.DueAt), string(raw), nullStringStore(task.LastEvent), task.CreatedAt, task.UpdatedAt,
+	); err != nil {
+		return domain.FollowupTask{}, err
+	}
+	created, ok, err := s.dbFollowupTask(ctx, task.ID)
+	if err != nil {
+		return domain.FollowupTask{}, err
+	}
+	if !ok {
+		return domain.FollowupTask{}, ErrNotFound
+	}
+	return created, nil
+}
+
+func (s *Store) dbUpdateFollowupTask(ctx context.Context, id string, patch domain.FollowupTask) (domain.FollowupTask, error) {
+	task, ok, err := s.dbFollowupTask(ctx, id)
+	if err != nil {
+		return domain.FollowupTask{}, err
+	}
+	if !ok {
+		return domain.FollowupTask{}, ErrNotFound
+	}
+	task.PlanID = firstNonEmptyStore(patch.PlanID, task.PlanID)
+	task.PatientID = firstNonEmptyStore(patch.PatientID, task.PatientID)
+	task.VisitID = patch.VisitID
+	task.FormID = patch.FormID
+	task.FormTemplateID = firstNonEmptyStore(patch.FormTemplateID, task.FormTemplateID)
+	task.AssigneeID = patch.AssigneeID
+	task.Role = patch.Role
+	task.Channel = firstNonEmptyStore(patch.Channel, task.Channel)
+	task.Status = firstNonEmptyStore(patch.Status, task.Status)
+	task.Priority = firstNonEmptyStore(patch.Priority, task.Priority)
+	task.DueAt = patch.DueAt
+	task.Result = patch.Result
+	task.LastEvent = patch.LastEvent
+	task.UpdatedAt = time.Now().UTC()
+	updated, err := s.dbCreateFollowupTask(ctx, task)
+	if err != nil {
+		return domain.FollowupTask{}, err
+	}
+	return updated, nil
+}
+
+func (s *Store) dbFollowupAssignees(ctx context.Context, role string) ([]domain.User, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	countRows, err := db.QueryContext(ctx, `
+SELECT assignee_id, COUNT(*)
+FROM followup_tasks
+WHERE assignee_id IS NOT NULL AND assignee_id <> '' AND status NOT IN ('completed', 'failed')
+GROUP BY assignee_id`)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for countRows.Next() {
+		var id string
+		var count int
+		if err := countRows.Scan(&id, &count); err != nil {
+			countRows.Close()
+			return nil, err
+		}
+		counts[id] = count
+	}
+	if err := countRows.Close(); err != nil {
+		return nil, err
+	}
+
+	rows, err := db.QueryContext(ctx, `
+SELECT DISTINCT u.id, u.username, u.display_name, u.password_hash, u.created_at, u.updated_at
+FROM users u
+JOIN user_roles ur ON ur.user_id = u.id
+WHERE ur.role_id = ? OR (? = 'agent' AND ur.role_id = 'admin')`, role, role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := []domain.User{}
+	for rows.Next() {
+		var user domain.User
+		if err := rows.Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := 0; i < len(users); i++ {
+		for j := i + 1; j < len(users); j++ {
+			if counts[users[j].ID] < counts[users[i].ID] || (counts[users[j].ID] == counts[users[i].ID] && users[j].ID < users[i].ID) {
+				users[i], users[j] = users[j], users[i]
+			}
+		}
+	}
+	return users, nil
 }
 
 func (s *Store) FormLibraryItem(id string) (domain.FormLibraryItem, bool) {
@@ -525,103 +698,72 @@ func (s *Store) UpdateFollowupPlan(id string, patch domain.FollowupPlan) (domain
 }
 
 func (s *Store) FollowupTasks(status, assigneeID string) []domain.FollowupTask {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]domain.FollowupTask, 0, len(s.followTasks))
-	for _, item := range s.followTasks {
-		if status != "" && item.Status != status {
-			continue
-		}
-		if assigneeID != "" && item.AssigneeID != assigneeID {
-			continue
-		}
-		items = append(items, item)
+	tasks, err := s.FollowupTasksStrict(context.Background(), status, assigneeID)
+	if err != nil {
+		return nil
 	}
-	return items
+	return tasks
+}
+
+func (s *Store) FollowupTasksStrict(ctx context.Context, status, assigneeID string) ([]domain.FollowupTask, error) {
+	return s.dbFollowupTasks(ctx, status, assigneeID)
 }
 
 func (s *Store) CreateFollowupTask(task domain.FollowupTask) domain.FollowupTask {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	if task.ID == "" {
-		task.ID = uuid.NewString()
+	created, err := s.CreateFollowupTaskStrict(context.Background(), task)
+	if err != nil {
+		return domain.FollowupTask{}
 	}
-	if patient, ok := s.patients[task.PatientID]; ok {
-		task.PatientName = patient.Name
-		task.PatientPhone = patient.Phone
-	}
-	if user, ok := s.users[task.AssigneeID]; ok {
-		task.AssigneeName = user.DisplayName
-	}
-	if task.Status == "" {
-		task.Status = "pending"
-	}
-	if task.Priority == "" {
-		task.Priority = "normal"
-	}
-	task.CreatedAt = now
-	task.UpdatedAt = now
-	s.followTasks[task.ID] = task
-	return task
+	return created
+}
+
+func (s *Store) CreateFollowupTaskStrict(ctx context.Context, task domain.FollowupTask) (domain.FollowupTask, error) {
+	return s.dbCreateFollowupTask(ctx, task)
 }
 
 func (s *Store) UpdateFollowupTask(id string, patch domain.FollowupTask) (domain.FollowupTask, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	task, ok := s.followTasks[id]
-	if !ok {
-		return domain.FollowupTask{}, ErrNotFound
-	}
-	task.PlanID = firstNonEmptyStore(patch.PlanID, task.PlanID)
-	task.PatientID = firstNonEmptyStore(patch.PatientID, task.PatientID)
-	task.VisitID = patch.VisitID
-	task.FormID = patch.FormID
-	task.FormTemplateID = firstNonEmptyStore(patch.FormTemplateID, task.FormTemplateID)
-	task.AssigneeID = patch.AssigneeID
-	task.Role = patch.Role
-	task.Channel = firstNonEmptyStore(patch.Channel, task.Channel)
-	task.Status = firstNonEmptyStore(patch.Status, task.Status)
-	task.Priority = firstNonEmptyStore(patch.Priority, task.Priority)
-	task.DueAt = patch.DueAt
-	task.Result = patch.Result
-	task.LastEvent = patch.LastEvent
-	if patient, ok := s.patients[task.PatientID]; ok {
-		task.PatientName = patient.Name
-		task.PatientPhone = patient.Phone
-	}
-	if user, ok := s.users[task.AssigneeID]; ok {
-		task.AssigneeName = user.DisplayName
-	}
-	task.UpdatedAt = time.Now().UTC()
-	s.followTasks[id] = task
-	return task, nil
+	return s.UpdateFollowupTaskStrict(context.Background(), id, patch)
+}
+
+func (s *Store) UpdateFollowupTaskStrict(ctx context.Context, id string, patch domain.FollowupTask) (domain.FollowupTask, error) {
+	return s.dbUpdateFollowupTask(ctx, id, patch)
 }
 
 func (s *Store) GenerateFollowupTasks(planID string) ([]domain.FollowupTask, error) {
-	s.mu.RLock()
-	plan, ok := s.followPlans[planID]
+	return s.GenerateFollowupTasksStrict(context.Background(), planID)
+}
+
+func (s *Store) GenerateFollowupTasksStrict(ctx context.Context, planID string) ([]domain.FollowupTask, error) {
+	plan, ok, err := s.dbFollowupPlan(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
-		s.mu.RUnlock()
 		return nil, ErrNotFound
 	}
-	patients := make([]domain.Patient, 0, len(s.patients))
-	assignees := s.followupAssigneesLocked(plan.AssigneeRole)
-	for _, patient := range s.patients {
+	patients, err := s.PatientsStrict(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	assignees, err := s.dbFollowupAssignees(ctx, plan.AssigneeRole)
+	if err != nil {
+		return nil, err
+	}
+	targets := make([]domain.Patient, 0, len(patients))
+	for _, patient := range patients {
 		if plan.DiseaseCode != "" && !strings.Contains(patient.Diagnosis, "高血压") && plan.DiseaseCode == "I10" {
 			continue
 		}
-		patients = append(patients, patient)
+		targets = append(targets, patient)
 	}
-	s.mu.RUnlock()
 
-	tasks := make([]domain.FollowupTask, 0, len(patients))
-	for index, patient := range patients {
+	tasks := make([]domain.FollowupTask, 0, len(targets))
+	for index, patient := range targets {
 		assigneeID := ""
 		if len(assignees) > 0 {
 			assigneeID = assignees[index%len(assignees)].ID
 		}
-		tasks = append(tasks, s.CreateFollowupTask(domain.FollowupTask{
+		task, err := s.CreateFollowupTaskStrict(ctx, domain.FollowupTask{
 			PlanID:         plan.ID,
 			PatientID:      patient.ID,
 			FormTemplateID: plan.FormTemplateID,
@@ -632,35 +774,13 @@ func (s *Store) GenerateFollowupTasks(planID string) ([]domain.FollowupTask, err
 			Priority:       "normal",
 			DueAt:          time.Now().AddDate(0, 0, plan.TriggerOffset).Format("2006-01-02"),
 			LastEvent:      "按随访方案批量生成，采用最少任务优先的轮询分配",
-		}))
+		})
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
 	}
 	return tasks, nil
-}
-
-func (s *Store) followupAssigneesLocked(role string) []domain.User {
-	counts := map[string]int{}
-	for _, task := range s.followTasks {
-		if task.AssigneeID != "" && task.Status != "completed" && task.Status != "failed" {
-			counts[task.AssigneeID]++
-		}
-	}
-	users := []domain.User{}
-	for _, user := range s.users {
-		for _, userRole := range user.Roles {
-			if userRole == role || (role == "agent" && userRole == "admin") {
-				users = append(users, user)
-				break
-			}
-		}
-	}
-	for i := 0; i < len(users); i++ {
-		for j := i + 1; j < len(users); j++ {
-			if counts[users[j].ID] < counts[users[i].ID] || (counts[users[j].ID] == counts[users[i].ID] && users[j].ID < users[i].ID) {
-				users[i], users[j] = users[j], users[i]
-			}
-		}
-	}
-	return users
 }
 
 func firstNonEmptyStore(values ...string) string {
@@ -670,4 +790,11 @@ func firstNonEmptyStore(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func nullStringStore(value string) sql.NullString {
+	if strings.TrimSpace(value) == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: value, Valid: true}
 }

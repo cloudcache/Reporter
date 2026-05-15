@@ -113,7 +113,7 @@ func (s *Store) createFormVersionInSQL(ctx context.Context, formID, actor string
 	if version.Version == 0 {
 		version.Version = 1
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO form_versions (id, form_id, version, schema_json, schema_hash, created_by, published, created_at) VALUES (?, ?, ?, CAST(? AS JSON), ?, NULLIF(?, ''), FALSE, ?)`,
+	_, err = db.ExecContext(ctx, `INSERT INTO form_versions (id, form_id, version, schema_json, schema_hash, created_by, published, created_at) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), FALSE, ?)`,
 		version.ID, version.FormID, version.Version, string(schemaJSON), hash, version.CreatedBy, version.CreatedAt)
 	if err != nil {
 		return domain.FormVersion{}, err
@@ -199,12 +199,77 @@ func (s *Store) createSubmissionInSQL(ctx context.Context, submission domain.Sub
 	submission.Status = firstNonEmptyStore(submission.Status, "submitted")
 	submission.CreatedAt = now
 	submission.UpdatedAt = now
-	_, err = db.ExecContext(ctx, `INSERT INTO form_submissions (id, form_id, form_version_id, submitter_id, status, data_json, created_at, updated_at) VALUES (?, ?, ?, NULLIF(?, ''), ?, CAST(? AS JSON), ?, ?)`,
+	_, err = db.ExecContext(ctx, `INSERT INTO form_submissions (id, form_id, form_version_id, submitter_id, status, data_json, created_at, updated_at) VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?)`,
 		submission.ID, submission.FormID, submission.FormVersionID, submission.SubmitterID, submission.Status, string(data), submission.CreatedAt, submission.UpdatedAt)
 	if err != nil {
 		return domain.Submission{}, err
 	}
 	return submission, nil
+}
+
+func (s *Store) submissionsByFormFromSQL(ctx context.Context, formID string) ([]domain.Submission, error) {
+	db, err := s.openConfiguredDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(ctx, `
+SELECT id, form_id, form_version_id, COALESCE(submitter_id, ''), status, CAST(data_json AS CHAR), created_at, updated_at
+FROM form_submissions
+WHERE form_id = ?
+ORDER BY created_at DESC`, formID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.Submission{}
+	for rows.Next() {
+		item, err := scanSubmission(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) submissionFromSQL(ctx context.Context, id string) (domain.Submission, bool, error) {
+	db, err := s.openConfiguredDB()
+	if err != nil {
+		return domain.Submission{}, false, err
+	}
+	defer db.Close()
+	row := db.QueryRowContext(ctx, `
+SELECT id, form_id, form_version_id, COALESCE(submitter_id, ''), status, CAST(data_json AS CHAR), created_at, updated_at
+FROM form_submissions
+WHERE id = ?`, id)
+	item, err := scanSubmission(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Submission{}, false, nil
+		}
+		return domain.Submission{}, false, err
+	}
+	return item, true, nil
+}
+
+type submissionScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanSubmission(scanner submissionScanner) (domain.Submission, error) {
+	var item domain.Submission
+	var raw string
+	if err := scanner.Scan(&item.ID, &item.FormID, &item.FormVersionID, &item.SubmitterID, &item.Status, &raw, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return domain.Submission{}, err
+	}
+	if strings.TrimSpace(raw) == "" {
+		raw = "{}"
+	}
+	if err := json.Unmarshal([]byte(raw), &item.Data); err != nil {
+		return domain.Submission{}, err
+	}
+	return item, nil
 }
 
 func (s *Store) openConfiguredDB() (*sql.DB, error) {

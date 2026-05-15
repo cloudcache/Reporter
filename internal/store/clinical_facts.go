@@ -259,9 +259,20 @@ func seedClinicalFacts(ctx context.Context, db *sql.DB) error {
 }
 
 func (s *Store) Patient360(ctx context.Context, patientID string) (domain.Patient360, error) {
-	patient, ok := s.Patient(patientID)
+	patient, ok, err := s.PatientStrict(ctx, patientID)
+	if err != nil {
+		return domain.Patient360{}, err
+	}
 	if !ok {
 		return domain.Patient360{}, ErrNotFound
+	}
+	visits, err := s.VisitsStrict(ctx, patientID)
+	if err != nil {
+		return domain.Patient360{}, err
+	}
+	medicalRecords, err := s.MedicalRecordsStrict(ctx, patientID)
+	if err != nil {
+		return domain.Patient360{}, err
 	}
 	diagnoses, err := s.PatientDiagnoses(ctx, patientID)
 	if err != nil {
@@ -297,8 +308,8 @@ func (s *Store) Patient360(ctx context.Context, patientID string) (domain.Patien
 	}
 	return domain.Patient360{
 		Patient:         patient,
-		Visits:          s.Visits(patientID),
-		MedicalRecords:  s.MedicalRecords(patientID),
+		Visits:          visits,
+		MedicalRecords:  medicalRecords,
 		Diagnoses:       diagnoses,
 		Histories:       histories,
 		Medications:     medications,
@@ -313,7 +324,7 @@ func (s *Store) Patient360(ctx context.Context, patientID string) (domain.Patien
 func (s *Store) PatientDiagnoses(ctx context.Context, patientID string) ([]domain.PatientDiagnosis, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.PatientDiagnosis{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), COALESCE(diagnosis_code, ''), diagnosis_name, diagnosis_type, COALESCE(DATE_FORMAT(diagnosed_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(department_name, ''), COALESCE(doctor_name, ''), COALESCE(source_system, ''), created_at, updated_at FROM patient_diagnoses WHERE patient_id = ? ORDER BY diagnosed_at DESC, created_at DESC`, patientID)
@@ -335,7 +346,7 @@ func (s *Store) PatientDiagnoses(ctx context.Context, patientID string) ([]domai
 func (s *Store) PatientHistories(ctx context.Context, patientID string) ([]domain.PatientHistory, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.PatientHistory{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, history_type, title, COALESCE(content, ''), COALESCE(DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(source_system, ''), created_at, updated_at FROM patient_histories WHERE patient_id = ? ORDER BY recorded_at DESC, created_at DESC`, patientID)
@@ -357,7 +368,7 @@ func (s *Store) PatientHistories(ctx context.Context, patientID string) ([]domai
 func (s *Store) MedicationOrders(ctx context.Context, patientID string) ([]domain.MedicationOrder, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.MedicationOrder{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), COALESCE(order_no, ''), COALESCE(prescription_no, ''), COALESCE(drug_code, ''), drug_name, COALESCE(generic_name, ''), COALESCE(specification, ''), COALESCE(dosage, ''), COALESCE(dosage_unit, ''), COALESCE(frequency, ''), COALESCE(route, ''), COALESCE(DATE_FORMAT(start_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(DATE_FORMAT(end_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(days, 0), COALESCE(quantity, 0), COALESCE(manufacturer, ''), COALESCE(doctor_name, ''), COALESCE(pharmacist_name, ''), status, COALESCE(adverse_reaction, ''), COALESCE(compliance, ''), created_at, updated_at FROM medication_orders WHERE patient_id = ? ORDER BY start_at DESC, created_at DESC`, patientID)
@@ -379,7 +390,7 @@ func (s *Store) MedicationOrders(ctx context.Context, patientID string) ([]domai
 func (s *Store) LabReports(ctx context.Context, patientID string) ([]domain.LabReport, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.LabReport{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), report_no, report_name, COALESCE(specimen, ''), COALESCE(DATE_FORMAT(ordered_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(DATE_FORMAT(reported_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(department_name, ''), COALESCE(doctor_name, ''), status, COALESCE(source_system, ''), created_at, updated_at FROM lab_reports WHERE patient_id = ? ORDER BY reported_at DESC, created_at DESC`, patientID)
@@ -423,7 +434,7 @@ func labResults(ctx context.Context, db *sql.DB, reportID string) ([]domain.LabR
 func (s *Store) ExamReports(ctx context.Context, patientID string) ([]domain.ExamReport, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.ExamReport{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), exam_no, COALESCE(exam_type, ''), exam_name, COALESCE(body_part, ''), COALESCE(report_conclusion, ''), COALESCE(report_findings, ''), COALESCE(DATE_FORMAT(ordered_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(DATE_FORMAT(reported_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(department_name, ''), COALESCE(doctor_name, ''), COALESCE(source_system, ''), created_at, updated_at FROM exam_reports WHERE patient_id = ? ORDER BY reported_at DESC, created_at DESC`, patientID)
@@ -445,7 +456,7 @@ func (s *Store) ExamReports(ctx context.Context, patientID string) ([]domain.Exa
 func (s *Store) SurgeryRecords(ctx context.Context, patientID string) ([]domain.SurgeryRecord, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.SurgeryRecord{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), COALESCE(operation_code, ''), operation_name, COALESCE(DATE_FORMAT(operation_date, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(surgeon_name, ''), COALESCE(anesthesia_type, ''), COALESCE(operation_level, ''), COALESCE(wound_grade, ''), COALESCE(outcome, ''), COALESCE(source_system, ''), created_at, updated_at FROM surgery_records WHERE patient_id = ? ORDER BY operation_date DESC, created_at DESC`, patientID)
@@ -467,7 +478,7 @@ func (s *Store) SurgeryRecords(ctx context.Context, patientID string) ([]domain.
 func (s *Store) FollowupRecords(ctx context.Context, patientID string) ([]domain.FollowupRecord, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.FollowupRecord{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), COALESCE(task_id, ''), COALESCE(project_id, ''), COALESCE(followup_type, ''), COALESCE(channel, ''), status, COALESCE(summary, ''), COALESCE(satisfaction_score, 0), COALESCE(risk_level, ''), COALESCE(DATE_FORMAT(followed_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(operator_name, ''), COALESCE(source_system, ''), created_at, updated_at FROM followup_records WHERE patient_id = ? ORDER BY followed_at DESC, created_at DESC`, patientID)
@@ -489,7 +500,7 @@ func (s *Store) FollowupRecords(ctx context.Context, patientID string) ([]domain
 func (s *Store) InterviewExtractedFacts(ctx context.Context, patientID string) ([]domain.InterviewExtractedFact, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.InterviewExtractedFact{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), COALESCE(interview_id, ''), fact_type, fact_key, fact_label, COALESCE(fact_value, ''), COALESCE(confidence, 0), COALESCE(DATE_FORMAT(extracted_at, '%Y-%m-%d %H:%i:%s'), ''), COALESCE(source_text, ''), created_at FROM interview_extracted_facts WHERE patient_id = ? ORDER BY extracted_at DESC, created_at DESC`, patientID)
@@ -511,7 +522,7 @@ func (s *Store) InterviewExtractedFacts(ctx context.Context, patientID string) (
 func (s *Store) SatisfactionIndicatorScores(ctx context.Context, projectID string) ([]domain.SatisfactionIndicatorScore, error) {
 	db, err := s.surveyDB(ctx)
 	if err != nil {
-		return []domain.SatisfactionIndicatorScore{}, nil
+		return nil, err
 	}
 	defer db.Close()
 	query := `SELECT id, project_id, indicator_id, COALESCE(patient_id, ''), COALESCE(visit_id, ''), COALESCE(department_name, ''), COALESCE(doctor_name, ''), COALESCE(nurse_name, ''), COALESCE(disease_name, ''), COALESCE(visit_type, ''), score, sample_count, COALESCE(DATE_FORMAT(score_period, '%Y-%m-%d'), ''), COALESCE(CAST(source_json AS CHAR), '{}'), created_at, updated_at FROM satisfaction_indicator_scores`

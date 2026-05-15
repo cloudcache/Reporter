@@ -51,18 +51,18 @@ export function ReportChart({ data, xField = "month", yField = "submissions", ti
   }, [data, xField, yField, title])
 
   if (data.length === 0) {
-    return <div className="grid h-[380px] w-full place-items-center rounded-lg border border-line bg-surface p-3 text-sm text-muted">暂无可绘制的数据</div>
+    return <div className="grid h-[420px] w-full place-items-center rounded-lg border border-line bg-white p-3 text-sm text-muted">暂无可绘制的数据</div>
   }
   if (error) {
     return <FallbackChart data={data} xField={xField} yField={yField} title={title} />
   }
-  return <div ref={ref} className="h-[380px] w-full rounded-lg border border-line bg-surface p-3" />
+  return <div ref={ref} className="h-[420px] min-w-[360px] rounded-lg border border-line bg-white p-3" />
 }
 
 function FallbackChart({ data, xField, yField, title }: { data: Row[]; xField: string; yField: string; title: string }) {
   const max = Math.max(...data.map((row) => Number(row[yField] || 0)), 1)
-  return <div className="rounded-lg border border-line bg-surface p-4">
-    <h2 className="mb-3 break-words text-base font-semibold">{title}</h2>
+  return <div className="min-h-[420px] rounded-lg border border-line bg-white p-4">
+    {title && <h2 className="mb-3 break-words text-base font-semibold">{title}</h2>}
     <div className="grid gap-2">
       {data.map((row, index) => {
         const value = Number(row[yField] || 0)

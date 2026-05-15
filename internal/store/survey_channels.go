@@ -320,7 +320,7 @@ func seedIntegrationChannels(ctx context.Context, db *sql.DB) error {
 		}
 		if _, err := db.ExecContext(ctx, `
 INSERT IGNORE INTO integration_channels (id, kind, name, endpoint, app_id, credential_ref, config_json, enabled)
-VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			item.ID, item.Kind, item.Name, item.Endpoint, item.AppID, item.CredentialRef, string(raw), item.Enabled); err != nil {
 			return err
 		}
@@ -376,7 +376,7 @@ func (s *Store) UpsertIntegrationChannel(ctx context.Context, item domain.Integr
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO integration_channels (id, kind, name, endpoint, app_id, credential_ref, config_json, enabled)
-VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE kind=VALUES(kind), name=VALUES(name), endpoint=VALUES(endpoint), app_id=VALUES(app_id), credential_ref=VALUES(credential_ref), config_json=VALUES(config_json), enabled=VALUES(enabled)`,
 		item.ID, item.Kind, item.Name, item.Endpoint, item.AppID, item.CredentialRef, string(raw), item.Enabled)
 	return item, err
@@ -429,7 +429,7 @@ func (s *Store) CreateSurveyShareLink(ctx context.Context, item domain.SurveySha
 	if string(raw) == "null" {
 		raw = []byte("{}")
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO survey_share_links (id, project_id, form_template_id, title, channel, token, config_json) VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, CAST(? AS JSON))`, item.ID, item.ProjectID, item.FormTemplateID, item.Title, item.Channel, item.Token, string(raw))
+	_, err = db.ExecContext(ctx, `INSERT INTO survey_share_links (id, project_id, form_template_id, title, channel, token, config_json) VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?)`, item.ID, item.ProjectID, item.FormTemplateID, item.Title, item.Channel, item.Token, string(raw))
 	if err != nil {
 		return domain.SurveyShareLink{}, err
 	}
@@ -533,7 +533,7 @@ func (s *Store) UpdateSurveyChannelDelivery(ctx context.Context, item domain.Sur
 	if strings.TrimSpace(item.SentAt) != "" {
 		sentAt = item.SentAt
 	}
-	_, err = db.ExecContext(ctx, `UPDATE survey_channel_deliveries SET status = ?, error = NULLIF(?, ''), provider_ref = NULLIF(?, ''), config_json = CAST(? AS JSON), sent_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+	_, err = db.ExecContext(ctx, `UPDATE survey_channel_deliveries SET status = ?, error = NULLIF(?, ''), provider_ref = NULLIF(?, ''), config_json = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		item.Status, item.Error, item.ProviderRef, string(raw), sentAt, item.ID)
 	if err != nil {
 		return domain.SurveyChannelDelivery{}, err
@@ -570,7 +570,7 @@ func (s *Store) CreateSurveyChannelDeliveries(ctx context.Context, items []domai
 		if strings.TrimSpace(item.SentAt) != "" {
 			sentAt = item.SentAt
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO survey_channel_deliveries (id, project_id, share_id, channel, recipient, recipient_name, status, message, error, provider_ref, config_json, sent_at) VALUES (?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), ?)`,
+		_, err = tx.ExecContext(ctx, `INSERT INTO survey_channel_deliveries (id, project_id, share_id, channel, recipient, recipient_name, status, message, error, provider_ref, config_json, sent_at) VALUES (?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)`,
 			item.ID, item.ProjectID, item.ShareID, item.Channel, item.Recipient, item.RecipientName, item.Status, item.Message, item.Error, item.ProviderRef, string(raw), sentAt)
 		if err != nil {
 			return nil, err
@@ -589,7 +589,7 @@ func (s *Store) CreateSurveyInterview(ctx context.Context, shareID, patientID st
 	}
 	defer db.Close()
 	item := domain.SurveyInterview{ID: uuid.NewString(), ShareID: shareID, PatientID: patientID, Status: "active", Answers: map[string]interface{}{}}
-	_, err = db.ExecContext(ctx, `INSERT INTO survey_interviews (id, share_id, patient_id, answers_json) VALUES (?, ?, NULLIF(?, ''), JSON_OBJECT())`, item.ID, item.ShareID, item.PatientID)
+	_, err = db.ExecContext(ctx, `INSERT INTO survey_interviews (id, share_id, patient_id, answers_json) VALUES (?, ?, NULLIF(?, ''), '{}')`, item.ID, item.ShareID, item.PatientID)
 	return item, err
 }
 
@@ -650,7 +650,7 @@ func (s *Store) UpsertSatisfactionProject(ctx context.Context, item domain.Satis
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO satisfaction_projects (id, name, target_type, form_template_id, start_date, end_date, target_sample_size, anonymous, requires_verification, status, config_json)
-VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, CAST(? AS JSON))
+VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE name=VALUES(name), target_type=VALUES(target_type), form_template_id=VALUES(form_template_id), start_date=VALUES(start_date), end_date=VALUES(end_date), target_sample_size=VALUES(target_sample_size), anonymous=VALUES(anonymous), requires_verification=VALUES(requires_verification), status=VALUES(status), config_json=VALUES(config_json)`,
 		item.ID, item.Name, item.TargetType, item.FormTemplateID, item.StartDate, item.EndDate, item.TargetSampleSize, item.Anonymous, item.RequiresVerification, item.Status, string(raw))
 	if err != nil {
@@ -718,7 +718,7 @@ func (s *Store) CreateSurveySubmission(ctx context.Context, item domain.SurveySu
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO survey_submissions (id, project_id, share_id, form_template_id, channel, patient_id, visit_id, anonymous, status, quality_status, quality_reason, started_at, duration_seconds, ip_address, user_agent, answers_json)
-VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, CAST(? AS JSON))`,
+VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?)`,
 		item.ID, item.ProjectID, item.ShareID, item.FormTemplateID, item.Channel, item.PatientID, item.VisitID, item.Anonymous, item.Status, item.QualityStatus, item.QualityReason, startedAt, item.DurationSeconds, item.IPAddress, item.UserAgent, string(raw))
 	if err != nil {
 		return item, err
@@ -743,7 +743,7 @@ VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, 
 		if score != nil {
 			scoreArg = *score
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO survey_submission_answers (id, submission_id, question_id, question_label, question_type, answer_json, score) VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?)`, uuid.NewString(), item.ID, id, label, kind, string(answerRaw), scoreArg)
+		_, err = tx.ExecContext(ctx, `INSERT INTO survey_submission_answers (id, submission_id, question_id, question_label, question_type, answer_json, score) VALUES (?, ?, ?, ?, ?, ?, ?)`, uuid.NewString(), item.ID, id, label, kind, string(answerRaw), scoreArg)
 		if err != nil {
 			return item, err
 		}
@@ -1059,7 +1059,7 @@ func (s *Store) UpsertSatisfactionCleaningRule(ctx context.Context, item domain.
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO satisfaction_cleaning_rules (id, project_id, name, rule_type, enabled, config_json, action)
-VALUES (?, NULLIF(?, ''), ?, ?, ?, CAST(? AS JSON), ?)
+VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE name=VALUES(name), rule_type=VALUES(rule_type), enabled=VALUES(enabled), config_json=VALUES(config_json), action=VALUES(action)`,
 		item.ID, item.ProjectID, item.Name, item.RuleType, item.Enabled, string(raw), item.Action)
 	return item, err
@@ -1132,7 +1132,7 @@ func (s *Store) UpsertSatisfactionIssue(ctx context.Context, item domain.Satisfa
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO satisfaction_issues (id, project_id, submission_id, indicator_id, title, source, responsible_department, responsible_person, severity, suggestion, measure, material_urls, verification_result, status, due_date, closed_at)
-VALUES (?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''))
+VALUES (?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''))
 ON DUPLICATE KEY UPDATE title=VALUES(title), responsible_department=VALUES(responsible_department), responsible_person=VALUES(responsible_person), severity=VALUES(severity), suggestion=VALUES(suggestion), measure=VALUES(measure), material_urls=VALUES(material_urls), verification_result=VALUES(verification_result), status=VALUES(status), due_date=VALUES(due_date), closed_at=VALUES(closed_at)`,
 		item.ID, item.ProjectID, item.SubmissionID, item.IndicatorID, item.Title, item.Source, item.ResponsibleDepartment, item.ResponsiblePerson, item.Severity, item.Suggestion, item.Measure, string(materials), item.VerificationResult, item.Status, item.DueDate, closedAt)
 	item.ClosedAt = closedAt
@@ -1177,7 +1177,7 @@ func (s *Store) AddSatisfactionIssueEvent(ctx context.Context, item domain.Satis
 	if string(attachments) == "null" {
 		attachments = []byte("[]")
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO satisfaction_issue_events (id, issue_id, action, from_status, to_status, content, attachments_json, actor_id) VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), NULLIF(?, ''))`,
+	_, err = db.ExecContext(ctx, `INSERT INTO satisfaction_issue_events (id, issue_id, action, from_status, to_status, content, attachments_json, actor_id) VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''))`,
 		item.ID, item.IssueID, item.Action, item.FromStatus, item.ToStatus, item.Content, string(attachments), item.ActorID)
 	if err == nil && strings.TrimSpace(item.ToStatus) != "" {
 		closed := ""

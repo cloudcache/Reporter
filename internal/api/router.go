@@ -645,7 +645,12 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listPatients(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Patients(r.URL.Query().Get("q")))
+	items, err := s.store.PatientsStrict(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) createPatient(w http.ResponseWriter, r *http.Request) {
@@ -653,13 +658,21 @@ func (s *Server) createPatient(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patient) {
 		return
 	}
-	patient = s.store.CreatePatient(patient)
+	patient, err := s.store.CreatePatientStrict(r.Context(), patient)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "patient.create", "/api/v1/patients/"+patient.ID, nil, patient)
 	writeJSON(w, http.StatusCreated, patient)
 }
 
 func (s *Server) getPatient(w http.ResponseWriter, r *http.Request) {
-	patient, ok := s.store.Patient(chi.URLParam(r, "id"))
+	patient, ok, err := s.store.PatientStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -669,7 +682,11 @@ func (s *Server) getPatient(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updatePatient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.Patient(id)
+	before, ok, err := s.store.PatientStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -688,11 +705,21 @@ func (s *Server) updatePatient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listPatientVisits(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Visits(chi.URLParam(r, "id")))
+	items, err := s.store.VisitsStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) listPatientMedicalRecords(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.MedicalRecords(chi.URLParam(r, "id")))
+	items, err := s.store.MedicalRecordsStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) getPatient360(w http.ResponseWriter, r *http.Request) {
@@ -984,7 +1011,12 @@ func (s *Server) createForm(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &form) {
 		return
 	}
-	form = s.store.CreateForm(form)
+	var err error
+	form, err = s.store.CreateFormStrict(r.Context(), form)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "form.create", "/api/v1/forms/"+form.ID, nil, form)
 	writeJSON(w, http.StatusCreated, form)
 }
@@ -996,7 +1028,7 @@ func (s *Server) createFormVersion(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	version, err := s.store.CreateFormVersion(chi.URLParam(r, "id"), actorID(r), req.Schema)
+	version, err := s.store.CreateFormVersionStrict(r.Context(), chi.URLParam(r, "id"), actorID(r), req.Schema)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1006,7 +1038,7 @@ func (s *Server) createFormVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) publishForm(w http.ResponseWriter, r *http.Request) {
-	form, err := s.store.PublishForm(chi.URLParam(r, "id"))
+	form, err := s.store.PublishFormStrict(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1022,7 +1054,7 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	submission, err := s.store.CreateSubmission(domain.Submission{FormID: chi.URLParam(r, "id"), SubmitterID: actorID(r), Data: req.Data})
+	submission, err := s.store.CreateSubmissionStrict(r.Context(), domain.Submission{FormID: chi.URLParam(r, "id"), SubmitterID: actorID(r), Data: req.Data})
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1032,11 +1064,20 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSubmissions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.SubmissionsByForm(chi.URLParam(r, "id")))
+	items, err := s.store.SubmissionsByFormStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) getSubmission(w http.ResponseWriter, r *http.Request) {
-	submission, ok := s.store.Submission(chi.URLParam(r, "id"))
+	submission, ok, err := s.store.SubmissionStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1045,7 +1086,12 @@ func (s *Server) getSubmission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDataSources(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.DataSources())
+	sources, err := s.store.DataSourcesStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sources)
 }
 
 func (s *Server) createDataSource(w http.ResponseWriter, r *http.Request) {
@@ -1053,13 +1099,22 @@ func (s *Server) createDataSource(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &source) {
 		return
 	}
-	source = s.store.CreateDataSource(source)
+	var err error
+	source, err = s.store.CreateDataSourceStrict(r.Context(), source)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "data-source.create", "/api/v1/data-sources/"+source.ID, nil, source)
 	writeJSON(w, http.StatusCreated, source)
 }
 
 func (s *Server) getDataSource(w http.ResponseWriter, r *http.Request) {
-	source, ok := s.store.DataSource(chi.URLParam(r, "id"))
+	source, ok, err := s.store.DataSourceStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1069,7 +1124,11 @@ func (s *Server) getDataSource(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateDataSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.DataSource(id)
+	before, ok, err := s.store.DataSourceStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1078,7 +1137,7 @@ func (s *Server) updateDataSource(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	source, err := s.store.UpdateDataSource(id, patch)
+	source, err := s.store.UpdateDataSourceStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1088,7 +1147,7 @@ func (s *Server) updateDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteDataSource(w http.ResponseWriter, r *http.Request) {
-	source, err := s.store.DeleteDataSource(chi.URLParam(r, "id"))
+	source, err := s.store.DeleteDataSourceStrict(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		statusError(w, err)
 		return
@@ -1098,7 +1157,11 @@ func (s *Server) deleteDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) testDataSource(w http.ResponseWriter, r *http.Request) {
-	source, ok := s.store.DataSource(chi.URLParam(r, "id"))
+	source, ok, err := s.store.DataSourceStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1107,7 +1170,11 @@ func (s *Server) testDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) previewDataSource(w http.ResponseWriter, r *http.Request) {
-	source, ok := s.store.DataSource(chi.URLParam(r, "id"))
+	source, ok, err := s.store.DataSourceStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1125,7 +1192,11 @@ func (s *Server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
-	source, ok := s.store.DataSource(chi.URLParam(r, "id"))
+	source, ok, err := s.store.DataSourceStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -1151,7 +1222,12 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 				if req.DryRun {
 					result.Patients = append(result.Patients, patient)
 				} else {
-					saved, created := s.store.UpsertPatientByNo(patient)
+					saved, created, err := s.store.UpsertPatientByNoStrict(r.Context(), patient)
+					if err != nil {
+						appendQualityError(&result, &quality, "患者写入失败", err)
+						result.Quality = append(result.Quality, quality)
+						continue
+					}
 					if created {
 						result.Created++
 					} else {
@@ -1178,7 +1254,12 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 				if req.DryRun {
 					result.Visits = append(result.Visits, visit)
 				} else {
-					saved, created := s.store.UpsertVisitByNo(visit)
+					saved, created, err := s.store.UpsertVisitByNoStrict(r.Context(), visit)
+					if err != nil {
+						appendQualityError(&result, &quality, "就诊写入失败", err)
+						result.Quality = append(result.Quality, quality)
+						continue
+					}
 					if created {
 						result.Created++
 					} else {
@@ -1213,7 +1294,12 @@ func (s *Server) syncDataSource(w http.ResponseWriter, r *http.Request) {
 				if req.DryRun {
 					result.MedicalRecords = append(result.MedicalRecords, medicalRecord)
 				} else {
-					saved, created := s.store.UpsertMedicalRecordByNo(medicalRecord)
+					saved, created, err := s.store.UpsertMedicalRecordByNoStrict(r.Context(), medicalRecord)
+					if err != nil {
+						appendQualityError(&result, &quality, "病历写入失败", err)
+						result.Quality = append(result.Quality, quality)
+						continue
+					}
 					if created {
 						result.Created++
 					} else {
@@ -1454,11 +1540,17 @@ func (s *Server) createSurveyShareLink(w http.ResponseWriter, r *http.Request) {
 	if item.Config == nil {
 		item.Config = map[string]interface{}{}
 	}
-	if form, version, ok := s.resolveFormVersion(item.FormTemplateID, configString(item.Config, "formVersionId")); ok {
+	if form, version, ok, err := s.resolveFormVersion(r.Context(), item.FormTemplateID, configString(item.Config, "formVersionId")); err != nil {
+		statusError(w, err)
+		return
+	} else if ok {
 		item.Config["formId"] = form.ID
 		item.Config["formVersionId"] = version.ID
 		item.Config["formVersion"] = version.Version
-	} else if s.managedFormExists(item.FormTemplateID) {
+	} else if exists, err := s.managedFormExists(r.Context(), item.FormTemplateID); err != nil {
+		statusError(w, err)
+		return
+	} else if exists {
 		http.Error(w, "selected form has no publishable version", http.StatusBadRequest)
 		return
 	}
@@ -1491,7 +1583,12 @@ func (s *Server) listSurveyChannelRecipients(w http.ResponseWriter, r *http.Requ
 		limit = 200
 	}
 	items := []domain.SurveyChannelRecipient{}
-	for _, patient := range s.store.Patients(keyword) {
+	patients, err := s.store.PatientsStrict(r.Context(), keyword)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	for _, patient := range patients {
 		recipient, source := patientRecipientForChannel(patient, channel)
 		item := domain.SurveyChannelRecipient{
 			PatientID: patient.ID,
@@ -2057,7 +2154,11 @@ func (s *Server) publicSurvey(w http.ResponseWriter, r *http.Request) {
 		statusError(w, err)
 		return
 	}
-	template := s.formTemplateForShare(share)
+	template, err := s.formTemplateForShare(r.Context(), share)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"share": share, "template": template, "requiresVerification": surveyRequiresVerification(share)})
 }
 
@@ -2090,7 +2191,11 @@ func (s *Server) verifyPublicSurveyPatient(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid patient identifier or phone", http.StatusBadRequest)
 		return
 	}
-	patient, visit, ok := s.findSurveyPatient(req.Identifier, req.Phone)
+	patient, visit, ok, err := s.findSurveyPatient(r.Context(), req.Identifier, req.Phone)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		statusError(w, store.ErrNotFound)
 		return
@@ -2142,7 +2247,11 @@ func (s *Server) createPublicSurveySubmission(w http.ResponseWriter, r *http.Req
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	template := s.formTemplateForShare(share)
+	template, err := s.formTemplateForShare(r.Context(), share)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	answers, err := sanitizeSurveyAnswers(template.Components, req.Answers)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2182,7 +2291,11 @@ func (s *Server) publicSurveyEvents(w http.ResponseWriter, r *http.Request) {
 		statusError(w, err)
 		return
 	}
-	template := s.formTemplateForShare(share)
+	template, err := s.formTemplateForShare(r.Context(), share)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.streamSurveyComponents(w, template.Components)
 }
 
@@ -2195,56 +2308,66 @@ func (s *Server) formTemplateByID(id string) domain.FormLibraryItem {
 	return domain.FormLibraryItem{}
 }
 
-func (s *Server) formTemplateForShare(share domain.SurveyShareLink) domain.FormLibraryItem {
+func (s *Server) formTemplateForShare(ctx context.Context, share domain.SurveyShareLink) (domain.FormLibraryItem, error) {
 	formID := firstNonEmpty(configString(share.Config, "formId"), share.FormTemplateID)
-	if form, version, ok := s.resolveFormVersion(formID, configString(share.Config, "formVersionId")); ok {
-		return formVersionTemplate(form, version)
+	if form, version, ok, err := s.resolveFormVersion(ctx, formID, configString(share.Config, "formVersionId")); err != nil {
+		return domain.FormLibraryItem{}, err
+	} else if ok {
+		return formVersionTemplate(form, version), nil
 	}
-	return s.formTemplateByID(share.FormTemplateID)
+	return s.formTemplateByID(share.FormTemplateID), nil
 }
 
-func (s *Server) resolveFormVersion(formID, versionID string) (domain.Form, domain.FormVersion, bool) {
+func (s *Server) resolveFormVersion(ctx context.Context, formID, versionID string) (domain.Form, domain.FormVersion, bool, error) {
 	formID = strings.TrimSpace(formID)
 	versionID = strings.TrimSpace(versionID)
 	if formID == "" {
-		return domain.Form{}, domain.FormVersion{}, false
+		return domain.Form{}, domain.FormVersion{}, false, nil
 	}
-	for _, form := range s.store.Forms() {
+	forms, err := s.store.FormsStrict(ctx)
+	if err != nil {
+		return domain.Form{}, domain.FormVersion{}, false, err
+	}
+	for _, form := range forms {
 		if form.ID != formID {
 			continue
 		}
 		if versionID != "" {
 			for _, version := range form.Versions {
 				if version.ID == versionID {
-					return form, version, true
+					return form, version, true, nil
 				}
 			}
-			return domain.Form{}, domain.FormVersion{}, false
+			return domain.Form{}, domain.FormVersion{}, false, nil
 		}
 		if form.CurrentVersionID != "" {
 			for _, version := range form.Versions {
 				if version.ID == form.CurrentVersionID {
-					return form, version, true
+					return form, version, true, nil
 				}
 			}
 		}
 		for _, version := range form.Versions {
 			if version.Published {
-				return form, version, true
+				return form, version, true, nil
 			}
 		}
 	}
-	return domain.Form{}, domain.FormVersion{}, false
+	return domain.Form{}, domain.FormVersion{}, false, nil
 }
 
-func (s *Server) managedFormExists(formID string) bool {
+func (s *Server) managedFormExists(ctx context.Context, formID string) (bool, error) {
 	formID = strings.TrimSpace(formID)
-	for _, form := range s.store.Forms() {
+	forms, err := s.store.FormsStrict(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, form := range forms {
 		if form.ID == formID {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func formVersionTemplate(form domain.Form, version domain.FormVersion) domain.FormLibraryItem {
@@ -2826,28 +2949,40 @@ func configBool(config map[string]interface{}, key string) bool {
 	}
 }
 
-func (s *Server) findSurveyPatient(identifier, phone string) (domain.Patient, domain.ClinicalVisit, bool) {
+func (s *Server) findSurveyPatient(ctx context.Context, identifier, phone string) (domain.Patient, domain.ClinicalVisit, bool, error) {
 	identifier = strings.TrimSpace(strings.ToLower(identifier))
 	phone = strings.TrimSpace(phone)
 	if identifier == "" || phone == "" {
-		return domain.Patient{}, domain.ClinicalVisit{}, false
+		return domain.Patient{}, domain.ClinicalVisit{}, false, nil
 	}
-	for _, patient := range s.store.Patients("") {
+	patients, err := s.store.PatientsStrict(ctx, "")
+	if err != nil {
+		return domain.Patient{}, domain.ClinicalVisit{}, false, err
+	}
+	for _, patient := range patients {
 		if strings.TrimSpace(patient.Phone) != phone {
 			continue
 		}
 		if strings.EqualFold(patient.ID, identifier) ||
 			strings.EqualFold(patient.PatientNo, identifier) ||
 			strings.EqualFold(patient.MedicalRecordNo, identifier) {
-			return patient, firstVisit(s.store.Visits(patient.ID)), true
+			visits, err := s.store.VisitsStrict(ctx, patient.ID)
+			if err != nil {
+				return domain.Patient{}, domain.ClinicalVisit{}, false, err
+			}
+			return patient, firstVisit(visits), true, nil
 		}
-		for _, visit := range s.store.Visits(patient.ID) {
+		visits, err := s.store.VisitsStrict(ctx, patient.ID)
+		if err != nil {
+			return domain.Patient{}, domain.ClinicalVisit{}, false, err
+		}
+		for _, visit := range visits {
 			if strings.EqualFold(visit.VisitNo, identifier) || strings.EqualFold(visit.ID, identifier) {
-				return patient, visit, true
+				return patient, visit, true, nil
 			}
 		}
 	}
-	return domain.Patient{}, domain.ClinicalVisit{}, false
+	return domain.Patient{}, domain.ClinicalVisit{}, false, nil
 }
 
 func firstVisit(visits []domain.ClinicalVisit) domain.ClinicalVisit {
@@ -3714,7 +3849,7 @@ func (s *Server) updateFollowupPlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) generateFollowupTasks(w http.ResponseWriter, r *http.Request) {
-	tasks, err := s.store.GenerateFollowupTasks(chi.URLParam(r, "id"))
+	tasks, err := s.store.GenerateFollowupTasksStrict(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		statusError(w, err)
 		return
@@ -3724,7 +3859,12 @@ func (s *Server) generateFollowupTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listFollowupTasks(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.FollowupTasks(r.URL.Query().Get("status"), r.URL.Query().Get("assigneeId")))
+	tasks, err := s.store.FollowupTasksStrict(r.Context(), r.URL.Query().Get("status"), r.URL.Query().Get("assigneeId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tasks)
 }
 
 func (s *Server) createFollowupTask(w http.ResponseWriter, r *http.Request) {
@@ -3732,7 +3872,12 @@ func (s *Server) createFollowupTask(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &task) {
 		return
 	}
-	task = s.store.CreateFollowupTask(task)
+	var err error
+	task, err = s.store.CreateFollowupTaskStrict(r.Context(), task)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "followup-task.create", "/api/v1/followup/tasks/"+task.ID, nil, task)
 	writeJSON(w, http.StatusCreated, task)
 }
@@ -3743,7 +3888,7 @@ func (s *Server) updateFollowupTask(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	task, err := s.store.UpdateFollowupTask(id, patch)
+	task, err := s.store.UpdateFollowupTaskStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return

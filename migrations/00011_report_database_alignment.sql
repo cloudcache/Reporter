@@ -11,11 +11,11 @@ ON DUPLICATE KEY UPDATE report_type = VALUES(report_type), name = VALUES(name), 
 
 INSERT INTO report_widgets (id, report_id, widget_type, title, query_json, vis_spec_json, data_source_id)
 VALUES
-  ('RW001', 'RP001', 'bar', '月度随访完成率', JSON_OBJECT('source', 'followup_records'), JSON_OBJECT(), NULL),
-  ('RW002', 'RP001', 'table', '随访月度明细', JSON_OBJECT('source', 'followup_records'), JSON_OBJECT(), NULL),
-  ('RW003', 'RP002', 'bar', '科室满意度', JSON_OBJECT('source', 'survey_submissions'), JSON_OBJECT(), NULL),
-  ('RW004', 'RP002', 'table', '满意度指标明细', JSON_OBJECT('source', 'satisfaction_indicator_scores'), JSON_OBJECT(), NULL),
-  ('RW005', 'RP003', 'bar', '责任科室投诉评价', JSON_OBJECT('source', 'evaluation_complaints'), JSON_OBJECT(), NULL)
+  ('RW001', 'RP001', 'bar', '月度随访完成率', '{"source":"followup_records"}', '{}', NULL),
+  ('RW002', 'RP001', 'table', '随访月度明细', '{"source":"followup_records"}', '{}', NULL),
+  ('RW003', 'RP002', 'bar', '科室满意度', '{"source":"survey_submissions"}', '{}', NULL),
+  ('RW004', 'RP002', 'table', '满意度指标明细', '{"source":"satisfaction_indicator_scores"}', '{}', NULL),
+  ('RW005', 'RP003', 'bar', '责任科室投诉评价', '{"source":"evaluation_complaints"}', '{}', NULL)
 ON DUPLICATE KEY UPDATE title = VALUES(title), query_json = VALUES(query_json);
 
 -- +goose Down

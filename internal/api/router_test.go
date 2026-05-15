@@ -145,32 +145,29 @@ func TestDataSourcePreviewAndSyncMapsPatientVisitAndRecord(t *testing.T) {
 			{Source: "$.record.title", Target: "record.title"},
 		},
 	})
+	if source.ID != "" {
+		t.Fatal("expected data source creation without database DSN to return no masked memory source")
+	}
 	router := NewRouter(Dependencies{Config: config.Load(), Log: logger.New("test"), Store: appStore})
 	cookie := loginCookie(t, router)
 	body := `{"payload":{"id":"P777","name":"测试患者","visit":{"no":"V777","department":"心内科"},"record":{"no":"R777","title":"门诊病历"}}}`
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/data-sources/"+source.ID+"/preview", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/data-sources/DS-001/preview", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected preview 200, got %d: %s", res.Code, res.Body.String())
-	}
-	if !strings.Contains(res.Body.String(), "patient.patientNo") {
-		t.Fatalf("expected mapped preview columns, got %s", res.Body.String())
+	if res.Code == http.StatusOK {
+		t.Fatalf("expected preview without database DSN to fail, got %d: %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/data-sources/"+source.ID+"/sync", strings.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/data-sources/DS-001/sync", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(cookie)
 	res = httptest.NewRecorder()
 	router.ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected sync 200, got %d: %s", res.Code, res.Body.String())
-	}
-	if !strings.Contains(res.Body.String(), "测试患者") || !strings.Contains(res.Body.String(), "门诊病历") {
-		t.Fatalf("expected synced patient and record, got %s", res.Body.String())
+	if res.Code == http.StatusOK {
+		t.Fatalf("expected sync without database DSN to fail, got %d: %s", res.Code, res.Body.String())
 	}
 }
 
@@ -185,7 +182,7 @@ func TestDataSourceSyncMapsClinicalFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open configured database store: %v", err)
 	}
-	source := appStore.CreateDataSource(domain.DataSource{
+	source, err := appStore.CreateDataSourceStrict(ctx, domain.DataSource{
 		Name:     "临床事实同步",
 		Protocol: "http",
 		Endpoint: "https://his.local/clinical-facts",
@@ -209,6 +206,9 @@ func TestDataSourceSyncMapsClinicalFacts(t *testing.T) {
 			{Source: "$.factValue", Target: "fact.factValue"},
 		},
 	})
+	if err != nil {
+		t.Fatalf("create data source in database: %v", err)
+	}
 	router := NewRouter(Dependencies{Config: cfg, Log: logger.New("test"), Store: appStore})
 	cookie := loginCookieWithPassword(t, router, "admin", "2.3245678")
 	body := `{"payload":{"patientNo":"P778","name":"事实患者","visitNo":"V778","diagnosis":"糖尿病","history":"高血压病史","drug":"二甲双胍片","labNo":"L778","labName":"血糖","itemName":"空腹血糖","itemValue":"6.8","examNo":"E778","examName":"眼底检查","followupSummary":"用药依从性好","factType":"experience","factKey":"drug_compliance","factLabel":"用药依从性","factValue":"良好"}}`

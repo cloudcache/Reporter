@@ -318,7 +318,7 @@ func seedFormLibrary(ctx context.Context, db *sql.DB) error {
 		}
 		if _, err := db.ExecContext(ctx, `
 INSERT INTO form_library_items (id, kind, label, hint, scenario, components_json, sort_order, enabled)
-VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?, TRUE)
+VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
 ON DUPLICATE KEY UPDATE
   kind = VALUES(kind),
   label = VALUES(label),

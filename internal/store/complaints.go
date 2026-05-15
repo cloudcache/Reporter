@@ -164,7 +164,7 @@ INSERT INTO evaluation_complaints (
   authenticity, status, responsible_department, responsible_person, audit_opinion, handling_opinion,
   rectification_measures, tracking_opinion, raw_payload, created_by
 ) VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, 0), NULLIF(?, ''),
-  ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), NULLIF(?, ''))`,
+  ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''))`,
 		item.ID, item.Source, item.Kind, item.PatientID, item.PatientName, item.PatientPhone, item.VisitID, item.Channel,
 		item.Title, item.Content, item.Rating, item.Category, item.Authenticity, item.Status, item.ResponsibleDepartment,
 		item.ResponsiblePerson, item.AuditOpinion, item.HandlingOpinion, item.RectificationMeasures, item.TrackingOpinion,
@@ -239,7 +239,7 @@ UPDATE evaluation_complaints SET
   handling_opinion = COALESCE(NULLIF(?, ''), handling_opinion),
   rectification_measures = COALESCE(NULLIF(?, ''), rectification_measures),
   tracking_opinion = COALESCE(NULLIF(?, ''), tracking_opinion),
-  raw_payload = IF(? = '{}', raw_payload, CAST(? AS JSON)),
+  raw_payload = IF(? = '{}', raw_payload, ?),
   archived_at = `+archiveExpr+`
 WHERE id = ?`,
 		patch.Source, patch.Kind, patch.PatientID, patch.PatientName, patch.PatientPhone, patch.VisitID, patch.Channel,
@@ -332,7 +332,7 @@ func insertComplaintEvent(ctx context.Context, db *sql.DB, complaintID, actorID,
 	}
 	_, err = db.ExecContext(ctx, `
 INSERT INTO evaluation_complaint_events (id, complaint_id, actor_id, event_type, comment, payload_json)
-VALUES (?, ?, NULLIF(?, ''), ?, ?, CAST(? AS JSON))`,
+VALUES (?, ?, NULLIF(?, ''), ?, ?, ?)`,
 		uuid.NewString(), complaintID, actorID, eventType, comment, string(raw))
 	return err
 }

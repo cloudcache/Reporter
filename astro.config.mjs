@@ -10,6 +10,10 @@ export default defineConfig({
       alias: {
         "@": new URL("./", import.meta.url).pathname,
       },
+      dedupe: ["react", "react-dom"],
+    },
+    optimizeDeps: {
+      include: ["react", "react-dom", "react/jsx-runtime"],
     },
   },
 })

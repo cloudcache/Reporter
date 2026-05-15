@@ -204,7 +204,7 @@ func (s *Store) dbUpsertPatientByNo(ctx context.Context, patient domain.Patient)
 	allergies, _ := json.Marshal(patient.Allergies)
 	sourceRefs, _ := json.Marshal(patient.SourceRefs)
 	_, err = db.ExecContext(ctx, `INSERT INTO patients (id, patient_no, medical_record_no, name, gender, birth_date, age, id_card_no, phone, address, nationality, ethnicity, marital_status, insurance_type, blood_type, allergies_json, emergency_contact, emergency_phone, diagnosis, status, last_visit_at, source_refs_json)
-VALUES (?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), CAST(? AS JSON), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), CAST(? AS JSON))
+VALUES (?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?)
 ON DUPLICATE KEY UPDATE medical_record_no=VALUES(medical_record_no), name=VALUES(name), gender=VALUES(gender), birth_date=VALUES(birth_date), age=VALUES(age), id_card_no=VALUES(id_card_no), phone=VALUES(phone), address=VALUES(address), nationality=VALUES(nationality), ethnicity=VALUES(ethnicity), marital_status=VALUES(marital_status), insurance_type=VALUES(insurance_type), blood_type=VALUES(blood_type), allergies_json=VALUES(allergies_json), emergency_contact=VALUES(emergency_contact), emergency_phone=VALUES(emergency_phone), diagnosis=VALUES(diagnosis), status=VALUES(status), last_visit_at=VALUES(last_visit_at), source_refs_json=VALUES(source_refs_json)`,
 		patient.ID, patient.PatientNo, patient.MedicalRecordNo, patient.Name, patient.Gender, patient.BirthDate, patient.Age, patient.IDCardNo, patient.Phone, patient.Address, patient.Nationality, patient.Ethnicity, patient.MaritalStatus, patient.InsuranceType, patient.BloodType, string(defaultJSON(allergies, "[]")), patient.EmergencyContact, patient.EmergencyPhone, patient.Diagnosis, patient.Status, patient.LastVisitAt, string(defaultJSON(sourceRefs, "{}")))
 	if err != nil {
@@ -280,7 +280,7 @@ func (s *Store) dbUpsertVisitByNo(ctx context.Context, visit domain.ClinicalVisi
 	}
 	sourceRefs, _ := json.Marshal(visit.SourceRefs)
 	_, err = db.ExecContext(ctx, `INSERT INTO clinical_visits (id, patient_id, visit_no, visit_type, department_code, department_name, ward, bed_no, attending_doctor, visit_at, discharge_at, diagnosis_code, diagnosis_name, status, source_refs_json)
-VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, CAST(? AS JSON))
+VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)
 ON DUPLICATE KEY UPDATE patient_id=VALUES(patient_id), visit_type=VALUES(visit_type), department_code=VALUES(department_code), department_name=VALUES(department_name), ward=VALUES(ward), bed_no=VALUES(bed_no), attending_doctor=VALUES(attending_doctor), visit_at=VALUES(visit_at), discharge_at=VALUES(discharge_at), diagnosis_code=VALUES(diagnosis_code), diagnosis_name=VALUES(diagnosis_name), status=VALUES(status), source_refs_json=VALUES(source_refs_json)`,
 		visit.ID, visit.PatientID, visit.VisitNo, visit.VisitType, visit.DepartmentCode, visit.DepartmentName, visit.Ward, visit.BedNo, visit.AttendingDoctor, visit.VisitAt, visit.DischargeAt, visit.DiagnosisCode, visit.DiagnosisName, visit.Status, string(defaultJSON(sourceRefs, "{}")))
 	if err != nil {
@@ -289,6 +289,106 @@ ON DUPLICATE KEY UPDATE patient_id=VALUES(patient_id), visit_type=VALUES(visit_t
 	returned, ok, err := s.dbVisit(ctx, visit.ID)
 	if err != nil || !ok {
 		return visit, created, err
+	}
+	return returned, created, nil
+}
+
+func (s *Store) dbMedicalRecords(ctx context.Context, patientID string) ([]domain.MedicalRecord, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	query := `SELECT id, patient_id, COALESCE(visit_id, ''), record_no, record_type, title, COALESCE(summary, ''),
+COALESCE(chief_complaint, ''), COALESCE(present_illness, ''), COALESCE(diagnosis_code, ''),
+COALESCE(diagnosis_name, ''), COALESCE(procedure_name, ''), COALESCE(study_uid, ''),
+COALESCE(study_desc, ''), COALESCE(DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s'), ''),
+COALESCE(CAST(source_refs_json AS CHAR), '{}'), created_at, updated_at FROM medical_records`
+	args := []interface{}{}
+	if patientID != "" {
+		query += ` WHERE patient_id = ?`
+		args = append(args, patientID)
+	}
+	query += ` ORDER BY recorded_at DESC, created_at DESC LIMIT 500`
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.MedicalRecord
+	for rows.Next() {
+		item, err := scanMedicalRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) dbMedicalRecord(ctx context.Context, id string) (domain.MedicalRecord, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return domain.MedicalRecord{}, false, err
+	}
+	defer db.Close()
+	row := db.QueryRowContext(ctx, `SELECT id, patient_id, COALESCE(visit_id, ''), record_no, record_type, title, COALESCE(summary, ''),
+COALESCE(chief_complaint, ''), COALESCE(present_illness, ''), COALESCE(diagnosis_code, ''),
+COALESCE(diagnosis_name, ''), COALESCE(procedure_name, ''), COALESCE(study_uid, ''),
+COALESCE(study_desc, ''), COALESCE(DATE_FORMAT(recorded_at, '%Y-%m-%d %H:%i:%s'), ''),
+COALESCE(CAST(source_refs_json AS CHAR), '{}'), created_at, updated_at FROM medical_records WHERE id = ? OR record_no = ? LIMIT 1`, id, id)
+	item, err := scanMedicalRecord(row)
+	if err == sql.ErrNoRows {
+		return domain.MedicalRecord{}, false, nil
+	}
+	if err != nil {
+		return domain.MedicalRecord{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *Store) dbUpsertMedicalRecordByNo(ctx context.Context, record domain.MedicalRecord) (domain.MedicalRecord, bool, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return record, false, err
+	}
+	defer db.Close()
+	created := false
+	if record.ID == "" {
+		if record.RecordNo != "" {
+			var existingID string
+			err := db.QueryRowContext(ctx, `SELECT id FROM medical_records WHERE record_no = ?`, record.RecordNo).Scan(&existingID)
+			if err == nil {
+				record.ID = existingID
+			} else if err != sql.ErrNoRows {
+				return record, false, err
+			}
+		}
+		if record.ID == "" {
+			record.ID = uuid.NewString()
+			created = true
+		}
+	}
+	if record.RecordNo == "" {
+		record.RecordNo = record.ID
+	}
+	if record.RecordType == "" {
+		record.RecordType = "external"
+	}
+	if record.Title == "" {
+		record.Title = record.RecordNo
+	}
+	sourceRefs, _ := json.Marshal(record.SourceRefs)
+	_, err = db.ExecContext(ctx, `INSERT INTO medical_records (id, patient_id, visit_id, record_no, record_type, title, summary, chief_complaint, present_illness, diagnosis_code, diagnosis_name, procedure_name, study_uid, study_desc, recorded_at, source_refs_json)
+VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)
+ON DUPLICATE KEY UPDATE patient_id=VALUES(patient_id), visit_id=VALUES(visit_id), record_type=VALUES(record_type), title=VALUES(title), summary=VALUES(summary), chief_complaint=VALUES(chief_complaint), present_illness=VALUES(present_illness), diagnosis_code=VALUES(diagnosis_code), diagnosis_name=VALUES(diagnosis_name), procedure_name=VALUES(procedure_name), study_uid=VALUES(study_uid), study_desc=VALUES(study_desc), recorded_at=VALUES(recorded_at), source_refs_json=VALUES(source_refs_json)`,
+		record.ID, record.PatientID, record.VisitID, record.RecordNo, record.RecordType, record.Title, record.Summary, record.ChiefComplaint, record.PresentIllness, record.DiagnosisCode, record.DiagnosisName, record.ProcedureName, record.StudyUID, record.StudyDesc, record.RecordedAt, string(defaultJSON(sourceRefs, "{}")))
+	if err != nil {
+		return record, created, err
+	}
+	returned, ok, err := s.dbMedicalRecord(ctx, record.ID)
+	if err != nil || !ok {
+		return record, created, err
 	}
 	return returned, created, nil
 }
@@ -333,6 +433,16 @@ func scanVisit(row patientScanner) (domain.ClinicalVisit, error) {
 	var item domain.ClinicalVisit
 	var sourceRaw string
 	if err := row.Scan(&item.ID, &item.PatientID, &item.VisitNo, &item.VisitType, &item.DepartmentCode, &item.DepartmentName, &item.Ward, &item.BedNo, &item.AttendingDoctor, &item.VisitAt, &item.DischargeAt, &item.DiagnosisCode, &item.DiagnosisName, &item.Status, &sourceRaw, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return item, err
+	}
+	_ = json.Unmarshal([]byte(sourceRaw), &item.SourceRefs)
+	return item, nil
+}
+
+func scanMedicalRecord(row patientScanner) (domain.MedicalRecord, error) {
+	var item domain.MedicalRecord
+	var sourceRaw string
+	if err := row.Scan(&item.ID, &item.PatientID, &item.VisitID, &item.RecordNo, &item.RecordType, &item.Title, &item.Summary, &item.ChiefComplaint, &item.PresentIllness, &item.DiagnosisCode, &item.DiagnosisName, &item.ProcedureName, &item.StudyUID, &item.StudyDesc, &item.RecordedAt, &sourceRaw, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return item, err
 	}
 	_ = json.Unmarshal([]byte(sourceRaw), &item.SourceRefs)

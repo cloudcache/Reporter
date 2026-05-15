@@ -73,7 +73,7 @@ func seedFormLibrary(ctx context.Context, db *sql.DB) error {
 		}
 		if _, err := db.ExecContext(ctx, `
 INSERT IGNORE INTO form_library_items (id, kind, label, hint, scenario, components_json, sort_order)
-VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?)`,
+VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			item.ID, item.Kind, item.Label, item.Hint, item.Scenario, string(components), item.SortOrder,
 		); err != nil {
 			return err

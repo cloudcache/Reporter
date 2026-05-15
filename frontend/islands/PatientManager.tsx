@@ -60,6 +60,10 @@ interface Recording {
 interface FormTemplate { id: string; label: string; scenario?: string }
 interface FormLibrary { templates: FormTemplate[] }
 
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : []
+}
+
 interface ClinicalVisit { id: string; visitNo: string; visitType?: string; departmentName?: string; attendingDoctor?: string; visitAt?: string; dischargeAt?: string; diagnosisName?: string; status: string }
 interface MedicalRecord { id: string; recordType: string; title: string; chiefComplaint?: string; diagnosisName?: string; recordedAt?: string }
 interface Diagnosis { id: string; diagnosisCode?: string; diagnosisName: string; diagnosisType: string; diagnosedAt?: string; departmentName?: string; doctorName?: string }
@@ -129,12 +133,14 @@ export function PatientManager() {
   const [patient360Tab, setPatient360Tab] = useState<"timeline" | "diagnosis" | "medication" | "exam" | "followup">("timeline")
   const [callWorkTab, setCallWorkTab] = useState<"form" | "records" | "notes">("form")
   const [callFormValues, setCallFormValues] = useState<Record<string, string>>({})
-  const selected = useMemo(() => patients.find((patient) => patient.id === selectedId), [patients, selectedId])
+  const safePatients = useMemo(() => asArray(patients), [patients])
+  const safeFormTemplates = useMemo(() => asArray(formTemplates), [formTemplates])
+  const selected = useMemo(() => safePatients.find((patient) => patient.id === selectedId), [safePatients, selectedId])
   const defaultFollowupTemplateId = useMemo(() => {
-    const matched = formTemplates.find((template) => /随访|满意|followup|satisfaction/i.test(`${template.label} ${template.scenario || ""}`))
-    return matched?.id || formTemplates[0]?.id || "outpatient-satisfaction"
-  }, [formTemplates])
-  const defaultFollowupTemplate = useMemo(() => formTemplates.find((template) => template.id === defaultFollowupTemplateId), [defaultFollowupTemplateId, formTemplates])
+    const matched = safeFormTemplates.find((template) => /随访|满意|followup|satisfaction/i.test(`${template.label} ${template.scenario || ""}`))
+    return matched?.id || safeFormTemplates[0]?.id || "outpatient-satisfaction"
+  }, [safeFormTemplates])
+  const defaultFollowupTemplate = useMemo(() => safeFormTemplates.find((template) => template.id === defaultFollowupTemplateId), [defaultFollowupTemplateId, safeFormTemplates])
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     return authedJson<T>(path, init)
@@ -148,10 +154,10 @@ export function PatientManager() {
         authedJson<SipEndpoint[]>("/api/v1/call-center/sip-endpoints").catch(() => []),
         authedJson<FormLibrary>("/api/v1/form-library").catch(() => ({ templates: [] })),
       ])
-      setPatients(patientData)
-      setIntegrationChannels(channelData)
-      setSipEndpoints(endpointData)
-      setFormTemplates(library.templates || [])
+      setPatients(asArray(patientData))
+      setIntegrationChannels(asArray(channelData))
+      setSipEndpoints(asArray(endpointData))
+      setFormTemplates(asArray(library?.templates))
       setMessage("")
     } catch (error) {
       setMessage(`患者 API 未连接：${error instanceof Error ? error.message : "未知错误"}`)
@@ -161,7 +167,7 @@ export function PatientManager() {
   async function search() {
     try {
       const list = await api<Patient[]>(`/api/v1/patients?q=${encodeURIComponent(keyword)}`)
-      setPatients(list)
+      setPatients(asArray(list))
       setMessage("")
     } catch (error) {
       setMessage(`搜索失败：${error instanceof Error ? error.message : "未知错误"}`)
@@ -174,9 +180,9 @@ export function PatientManager() {
       const path = selectedId ? `/api/v1/patients/${selectedId}` : "/api/v1/patients"
       const patient = await api<Patient>(path, { method, body: JSON.stringify(draft) })
       if (selectedId) {
-        setPatients(patients.map((item) => item.id === selectedId ? patient : item))
+        setPatients(safePatients.map((item) => item.id === selectedId ? patient : item))
       } else {
-        setPatients([...patients, patient])
+        setPatients([...safePatients, patient])
       }
       setDraft(patient)
       setSelectedId(patient.id)
@@ -286,7 +292,7 @@ export function PatientManager() {
               </tr>
             </thead>
             <tbody>
-              {patients.map((patient) => (
+              {safePatients.map((patient) => (
                 <tr key={patient.id} className={`cursor-pointer border-t border-line hover:bg-gray-50 ${patient.id === selectedId ? "bg-blue-50" : ""}`} onClick={() => selectPatient(patient)}>
                   <td className="px-4 py-3 font-mono text-xs">{patient.patientNo}</td>
                   <td className="px-4 py-3 font-medium text-ink">{patient.name}</td>
@@ -577,17 +583,30 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 function Patient360Panel({ data, activeTab, setActiveTab }: { data: Patient360 | null; activeTab: "timeline" | "diagnosis" | "medication" | "exam" | "followup"; setActiveTab: (tab: "timeline" | "diagnosis" | "medication" | "exam" | "followup") => void }) {
+  const safe = useMemo(() => data ? {
+    ...data,
+    visits: asArray(data.visits),
+    medicalRecords: asArray(data.medicalRecords),
+    diagnoses: asArray(data.diagnoses),
+    histories: asArray(data.histories),
+    medications: asArray(data.medications),
+    labReports: asArray(data.labReports),
+    examReports: asArray(data.examReports),
+    surgeries: asArray(data.surgeries),
+    followupRecords: asArray(data.followupRecords),
+    interviewFacts: asArray(data.interviewFacts),
+  } : null, [data])
   const timeline = useMemo(() => {
-    if (!data) return []
+    if (!safe) return []
     return [
-      ...data.visits.map((item) => ({ at: item.visitAt || "", type: "就诊", title: `${item.departmentName || "未记录科室"} · ${item.visitNo}`, desc: [item.visitType, item.attendingDoctor, item.diagnosisName].filter(Boolean).join(" · ") })),
-      ...data.medicalRecords.map((item) => ({ at: item.recordedAt || "", type: "病历", title: item.title, desc: [item.recordType, item.chiefComplaint, item.diagnosisName].filter(Boolean).join(" · ") })),
-      ...data.labReports.map((item) => ({ at: item.reportedAt || "", type: "检验", title: item.reportName, desc: `${item.specimen || ""} ${item.status || ""}`.trim() })),
-      ...data.examReports.map((item) => ({ at: item.reportedAt || "", type: "检查", title: item.examName, desc: [item.examType, item.bodyPart, item.reportConclusion].filter(Boolean).join(" · ") })),
-      ...data.followupRecords.map((item) => ({ at: item.followedAt || "", type: "随访", title: item.followupType || "随访记录", desc: [item.channel, item.status, item.summary].filter(Boolean).join(" · ") })),
-      ...data.interviewFacts.map((item) => ({ at: item.extractedAt || "", type: "访谈事实", title: item.factLabel, desc: item.factValue || "" })),
+      ...safe.visits.map((item) => ({ at: item.visitAt || "", type: "就诊", title: `${item.departmentName || "未记录科室"} · ${item.visitNo || "-"}`, desc: [item.visitType, item.attendingDoctor, item.diagnosisName].filter(Boolean).join(" · ") })),
+      ...safe.medicalRecords.map((item) => ({ at: item.recordedAt || "", type: "病历", title: item.title || item.recordType || "病历记录", desc: [item.recordType, item.chiefComplaint, item.diagnosisName].filter(Boolean).join(" · ") })),
+      ...safe.labReports.map((item) => ({ at: item.reportedAt || "", type: "检验", title: item.reportName || "检验报告", desc: `${item.specimen || ""} ${item.status || ""}`.trim() })),
+      ...safe.examReports.map((item) => ({ at: item.reportedAt || "", type: "检查", title: item.examName || "检查报告", desc: [item.examType, item.bodyPart, item.reportConclusion].filter(Boolean).join(" · ") })),
+      ...safe.followupRecords.map((item) => ({ at: item.followedAt || "", type: "随访", title: item.followupType || "随访记录", desc: [item.channel, item.status, item.summary].filter(Boolean).join(" · ") })),
+      ...safe.interviewFacts.map((item) => ({ at: item.extractedAt || "", type: "访谈事实", title: item.factLabel || "抽取事实", desc: item.factValue || "" })),
     ].sort((a, b) => (b.at || "").localeCompare(a.at || ""))
-  }, [data])
+  }, [safe])
   const tabs = [
     ["timeline", "全病程"],
     ["diagnosis", "诊断病史"],
@@ -606,26 +625,27 @@ function Patient360Panel({ data, activeTab, setActiveTab }: { data: Patient360 |
       </div>
     </div>
     {!data && <div className="mt-4 rounded-lg border border-dashed border-line bg-gray-50 p-4 text-sm text-muted">暂无 Patient 360 数据，需先完成 HIS/EMR/LIS/PACS/随访数据同步。</div>}
-    {data && activeTab === "timeline" && <div className="mt-4 grid gap-2">
+    {safe && activeTab === "timeline" && <div className="mt-4 grid gap-2">
+      {!timeline.length && <div className="rounded-lg border border-dashed border-line bg-gray-50 p-4 text-sm text-muted">已加载患者主索引，暂无可展示的全病程事件。</div>}
       {timeline.map((item, index) => <div key={`${item.type}-${index}`} className="grid gap-2 rounded-lg border border-line p-3 md:grid-cols-[150px_90px_minmax(0,1fr)]">
         <div className="text-sm text-muted">{item.at || "-"}</div>
         <div className="font-medium text-primary">{item.type}</div>
         <div><div className="font-medium text-ink">{item.title}</div><div className="mt-1 text-sm text-muted">{item.desc || "-"}</div></div>
       </div>)}
     </div>}
-    {data && activeTab === "diagnosis" && <div className="mt-4 grid gap-4 xl:grid-cols-2">
-      <InfoList title="诊断" items={data.diagnoses.map((item) => ({ title: item.diagnosisName, meta: [item.diagnosisCode, item.diagnosisType, item.departmentName, item.doctorName, item.diagnosedAt].filter(Boolean).join(" · ") }))} />
-      <InfoList title="病史" items={data.histories.map((item) => ({ title: item.title, meta: [item.historyType, item.recordedAt].filter(Boolean).join(" · "), desc: item.content }))} />
+    {safe && activeTab === "diagnosis" && <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <InfoList title="诊断" items={safe.diagnoses.map((item) => ({ title: item.diagnosisName || "未命名诊断", meta: [item.diagnosisCode, item.diagnosisType, item.departmentName, item.doctorName, item.diagnosedAt].filter(Boolean).join(" · ") }))} />
+      <InfoList title="病史" items={safe.histories.map((item) => ({ title: item.title || item.historyType || "病史记录", meta: [item.historyType, item.recordedAt].filter(Boolean).join(" · "), desc: item.content }))} />
     </div>}
-    {data && activeTab === "medication" && <InfoList className="mt-4" title="用药记录" items={data.medications.map((item) => ({ title: item.drugName, meta: [item.dosage && `${item.dosage}${item.dosageUnit || ""}`, item.frequency, item.route, item.startAt, item.status, item.compliance].filter(Boolean).join(" · ") }))} />}
-    {data && activeTab === "exam" && <div className="mt-4 grid gap-4 xl:grid-cols-2">
-      <InfoList title="检验报告" items={data.labReports.map((item) => ({ title: item.reportName, meta: [item.specimen, item.reportedAt, item.status].filter(Boolean).join(" · "), desc: (item.results || []).map((result) => `${result.itemName}: ${result.resultValue || "-"}${result.unit || ""} ${result.abnormalFlag || ""}`).join("；") }))} />
-      <InfoList title="检查报告" items={data.examReports.map((item) => ({ title: item.examName, meta: [item.examType, item.bodyPart, item.reportedAt].filter(Boolean).join(" · "), desc: item.reportConclusion }))} />
-      <InfoList title="手术记录" items={data.surgeries.map((item) => ({ title: item.operationName, meta: [item.operationDate, item.surgeonName, item.outcome].filter(Boolean).join(" · ") }))} />
+    {safe && activeTab === "medication" && <InfoList className="mt-4" title="用药记录" items={safe.medications.map((item) => ({ title: item.drugName || "用药记录", meta: [item.dosage && `${item.dosage}${item.dosageUnit || ""}`, item.frequency, item.route, item.startAt, item.status, item.compliance].filter(Boolean).join(" · ") }))} />}
+    {safe && activeTab === "exam" && <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <InfoList title="检验报告" items={safe.labReports.map((item) => ({ title: item.reportName || "检验报告", meta: [item.specimen, item.reportedAt, item.status].filter(Boolean).join(" · "), desc: asArray(item.results).map((result) => `${result.itemName}: ${result.resultValue || "-"}${result.unit || ""} ${result.abnormalFlag || ""}`).join("；") }))} />
+      <InfoList title="检查报告" items={safe.examReports.map((item) => ({ title: item.examName || "检查报告", meta: [item.examType, item.bodyPart, item.reportedAt].filter(Boolean).join(" · "), desc: item.reportConclusion }))} />
+      <InfoList title="手术记录" items={safe.surgeries.map((item) => ({ title: item.operationName || "手术记录", meta: [item.operationDate, item.surgeonName, item.outcome].filter(Boolean).join(" · ") }))} />
     </div>}
-    {data && activeTab === "followup" && <div className="mt-4 grid gap-4 xl:grid-cols-2">
-      <InfoList title="随访记录" items={data.followupRecords.map((item) => ({ title: item.followupType || "随访记录", meta: [item.channel, item.status, item.followedAt, item.operatorName, item.satisfactionScore ? `满意度 ${item.satisfactionScore}` : ""].filter(Boolean).join(" · "), desc: item.summary }))} />
-      <InfoList title="访谈抽取事实" items={data.interviewFacts.map((item) => ({ title: item.factLabel, meta: [item.factType, item.extractedAt, item.confidence ? `置信度 ${Math.round(item.confidence * 100)}%` : ""].filter(Boolean).join(" · "), desc: item.factValue }))} />
+    {safe && activeTab === "followup" && <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <InfoList title="随访记录" items={safe.followupRecords.map((item) => ({ title: item.followupType || "随访记录", meta: [item.channel, item.status, item.followedAt, item.operatorName, item.satisfactionScore ? `满意度 ${item.satisfactionScore}` : ""].filter(Boolean).join(" · "), desc: item.summary }))} />
+      <InfoList title="访谈抽取事实" items={safe.interviewFacts.map((item) => ({ title: item.factLabel || "抽取事实", meta: [item.factType, item.extractedAt, item.confidence ? `置信度 ${Math.round(item.confidence * 100)}%` : ""].filter(Boolean).join(" · "), desc: item.factValue }))} />
     </div>}
   </div>
 }

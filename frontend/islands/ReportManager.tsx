@@ -152,8 +152,8 @@ export function ReportManager() {
   const yField = query.measures[0] || "submissions"
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-      <aside className="rounded-lg border border-line bg-surface p-4">
+    <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="rounded-lg border border-line bg-surface p-4 xl:sticky xl:top-24 xl:self-start">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">分析报表</h2>
           <button className="rounded-lg border border-line px-3 py-1.5 text-xs hover:border-primary" onClick={() => { setSelectedId(""); selectedIdRef.current = ""; setDraft(emptyReport); setQuery({ dimensions: [], measures: [], rows: [] }) }}>
@@ -163,7 +163,7 @@ export function ReportManager() {
         <div className="mb-3 rounded-lg bg-gray-50 p-3 text-xs leading-5 text-muted">
           满意度分析、评价投诉分析和随访分析在这里并列管理，数据从各业务表实时聚合。
         </div>
-        <div className="grid gap-2">
+        <div className="grid max-h-[calc(100vh-260px)] gap-2 overflow-y-auto pr-1">
           {reports.map((report) => (
             <button key={report.id} className={`rounded-lg border px-3 py-3 text-left ${report.id === selectedId ? "border-primary bg-blue-50" : "border-line"}`} onClick={() => selectReport(report)}>
               <span className="block text-sm font-medium">{report.name}</span>
@@ -174,9 +174,9 @@ export function ReportManager() {
         </div>
       </aside>
 
-      <section className="grid gap-5">
+      <section className="grid min-w-0 gap-5">
         <div className="rounded-lg border border-line bg-surface p-4">
-          <div className="grid gap-3 md:grid-cols-[180px_1fr_1.5fr_auto]">
+          <div className="grid gap-3 lg:grid-cols-[180px_minmax(180px,1fr)_minmax(240px,1.4fr)_auto]">
             <select className="rounded-lg border border-line px-3 py-2 text-sm" value={draft.type || "custom"} onChange={(event) => setDraft({ ...draft, type: event.target.value })}>
               {Object.entries(reportTypeLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
@@ -187,7 +187,7 @@ export function ReportManager() {
           {message && <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-primary">{message}</div>}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 rounded-lg border border-line bg-surface p-3">
           <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => addWidget("bar")}>添加图表</button>
           <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary" onClick={() => addWidget("table")}>添加明细表</button>
           <button className="rounded-lg border border-line px-3 py-2 text-sm hover:border-primary" disabled={!selectedId} onClick={() => selectedId && loadQuery(selectedId)}>刷新数据</button>
@@ -201,12 +201,21 @@ export function ReportManager() {
           <div className="grid gap-2 text-sm leading-6 text-muted">{[...insights.rootCauses, ...insights.suggestions].map((item) => <p key={item}>{item}</p>)}</div>
         </div>}
 
-        <div className="grid gap-5 xl:grid-cols-[1fr_1.15fr]">
-          <ReportChart data={query.rows} xField={xField} yField={yField} title={draft.widgets?.find((item) => item.type !== "table")?.title || draft.name || "报表图表"} />
-          <div>
-            <h2 className="mb-3 text-base font-semibold">报表明细</h2>
+        <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(420px,0.9fr)_minmax(620px,1.25fr)]">
+          <section className="min-w-0 rounded-lg border border-line bg-surface p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="truncate text-base font-semibold">{draft.widgets?.find((item) => item.type !== "table")?.title || draft.name || "报表图表"}</h2>
+              <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-muted">{query.rows.length} 条</span>
+            </div>
+            <ReportChart data={query.rows} xField={xField} yField={yField} title="" />
+          </section>
+          <section className="min-w-0 rounded-lg border border-line bg-surface p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">报表明细</h2>
+              <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-muted">可横向滚动</span>
+            </div>
             <ResultsTable rows={query.rows} />
-          </div>
+          </section>
         </div>
       </section>
     </div>
