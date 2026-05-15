@@ -421,7 +421,11 @@ export function FormDesigner() {
             <h2 className="text-base font-semibold">问卷 / 表单设计闭环</h2>
             <p className="mt-1 text-sm text-muted">按题库、结构、逻辑、版本、项目绑定推进；发布后的公开问卷始终绑定指定版本。</p>
           </div>
-          <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-primary">{formStatus === "published" ? `线上版本 v${currentVersion?.version || "-"}` : "草稿编辑中"}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-primary">{formStatus === "published" ? `线上版本 v${currentVersion?.version || "-"}` : "草稿编辑中"}</span>
+            <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white" onClick={saveVersion}>保存新版本</button>
+            <button className="rounded-lg border border-line bg-white px-4 py-2 text-sm" disabled={!formId} onClick={publishCurrent}>发布版本</button>
+          </div>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-5">
           {designFlow.map((step, index) => <FlowStep key={step.title} index={index + 1} title={step.title} text={step.text} />)}
@@ -510,9 +514,9 @@ export function FormDesigner() {
       </aside>
 
       <section className="p-5">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="grid gap-2">
-            <select className="w-[360px] rounded-md border border-line px-3 py-2 text-sm" value={formId} onChange={(event) => {
+        <div className="mb-4 grid gap-3">
+          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]">
+            <select className="h-11 rounded-md border border-line px-3 text-sm" value={formId} onChange={(event) => {
               const form = forms.find((item) => item.id === event.target.value)
               setFormId(event.target.value)
               if (form) {
@@ -523,15 +527,9 @@ export function FormDesigner() {
                 setComponents(version?.schema || [])
               }
             }}><option value="">新建表单</option>{forms.map((form) => <option key={form.id} value={form.id}>{form.name} · {form.status}</option>)}</select>
-            <input className="w-[360px] rounded-md border border-line px-3 py-2 text-sm" value={formName} onChange={(event) => setFormName(event.target.value)} />
-            <textarea className="min-h-16 w-[360px] rounded-md border border-line px-3 py-2 text-sm" placeholder="版本说明 / 适用项目 / 调查期次" value={formDescription} onChange={(event) => setFormDescription(event.target.value)} />
+            <input className="h-11 rounded-md border border-line px-3 text-sm" value={formName} onChange={(event) => setFormName(event.target.value)} />
           </div>
-          <div className="grid gap-2">
-            <div className="flex gap-2"><button className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white" onClick={saveVersion}>保存新版本</button><button className="rounded-md border border-line px-3 py-2 text-sm" disabled={!formId} onClick={publishCurrent}>发布版本</button></div>
-            <div className="rounded-md border border-line bg-gray-50 px-3 py-2 text-xs leading-5 text-muted">
-              发布后版本锁定；继续修改请保存为新版本，项目渠道会继续使用已绑定版本。
-            </div>
-          </div>
+          <textarea className="min-h-14 rounded-md border border-line px-3 py-2 text-sm" placeholder="版本说明 / 适用项目 / 调查期次" value={formDescription} onChange={(event) => setFormDescription(event.target.value)} />
         </div>
         <div className="mb-3 grid gap-2 rounded-md bg-gray-50 px-3 py-2 text-xs text-muted md:grid-cols-[1fr_auto]">
           <span>状态：{formStatus === "published" ? "已发布，线上版本已锁定；继续保存会生成新版本" : "草稿，可继续编辑"} · 当前题目 {components.filter((item) => item.type !== "section").length} 个 · 矩阵 {components.filter((item) => item.type === "matrix").length} 个</span>
