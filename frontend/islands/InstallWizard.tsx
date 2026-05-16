@@ -15,7 +15,7 @@ export function InstallWizard() {
   const [installing, setInstalling] = useState(false)
   const [database, setDatabase] = useState({
     driver: "mysql",
-    host: "127.0.0.1",
+    host: "",
     port: 3306,
     database: "reporter",
     username: "reporter",
@@ -109,7 +109,7 @@ export function InstallWizard() {
             <p className="mt-1 text-sm text-muted">需要提前创建空数据库，并授予建表、写入权限。</p>
           </div>
           <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
-            <Text label="数据库主机" value={database.host} onChange={(value) => setDatabase({ ...database, host: value })} />
+            <Text label="数据库主机" value={database.host} placeholder="例如 db.internal 或 mysql 服务名" onChange={(value) => setDatabase({ ...database, host: value })} />
             <NumberField label="端口" value={database.port} onChange={(value) => setDatabase({ ...database, port: value })} />
             <Text label="数据库名" value={database.database} onChange={(value) => setDatabase({ ...database, database: value })} />
             <Text label="用户名" value={database.username} onChange={(value) => setDatabase({ ...database, username: value })} />
@@ -149,8 +149,8 @@ export function InstallWizard() {
   )
 }
 
-function Text({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="grid gap-1 text-sm"><span className="text-muted">{label}</span><input className="rounded-lg border border-line px-3 py-2" value={value} onChange={(event) => onChange(event.target.value)} /></label>
+function Text({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (value: string) => void }) {
+  return <label className="grid gap-1 text-sm"><span className="text-muted">{label}</span><input className="rounded-lg border border-line px-3 py-2" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>
 }
 
 function Password({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

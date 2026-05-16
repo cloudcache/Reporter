@@ -26,7 +26,6 @@ interface Issue { id: string; projectId?: string; submissionId?: string; indicat
 interface IssueEvent { id: string; issueId: string; action: string; fromStatus?: string; toStatus?: string; content?: string; attachments?: string[]; actorId?: string; createdAt: string }
 type IssueEventDraft = { action: string; toStatus: string; content: string; attachments: string }
 
-const origin = "http://127.0.0.1:4321"
 const defaultModules: Record<ProjectModule, boolean> = { channels: true, answers: true, indicators: true, cleaning: true, analysis: true, issues: true }
 const emptyProject: Project = { id: "", name: "", targetType: "outpatient", formTemplateId: "", startDate: "", endDate: "", targetSampleSize: 0, actualSampleSize: 0, anonymous: true, requiresVerification: false, status: "draft", config: { projectType: "satisfaction", phases: [], modules: defaultModules } }
 const targetLabels: Record<string, string> = { outpatient: "门诊", emergency: "急诊", inpatient: "住院", discharge: "出院", physical: "体检", staff: "员工" }
@@ -51,6 +50,7 @@ const issueActionLabels: Record<string, string> = { assign: "分派", remind: "�
 type ProjectView = "list" | "new" | "edit" | "dashboard" | "module"
 
 export function SurveyShareManager({ initialTab = "overview", view = "module" }: { initialTab?: ProjectTab; view?: ProjectView }) {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
   const [templates, setTemplates] = useState<Template[]>([])
   const [forms, setForms] = useState<ManagedForm[]>([])
   const [projects, setProjects] = useState<Project[]>([])

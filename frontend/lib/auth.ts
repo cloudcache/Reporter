@@ -1,4 +1,6 @@
-export const apiBase = import.meta.env.PUBLIC_API_BASE || "http://127.0.0.1:8080"
+const configuredApiBase = import.meta.env.PUBLIC_API_BASE
+
+export const apiBase = configuredApiBase ?? ""
 export const accessTokenKey = "reporter.accessToken"
 
 const refreshLockKey = "reporter.refresh.lockUntil"
