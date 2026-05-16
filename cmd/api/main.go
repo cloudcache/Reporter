@@ -10,6 +10,7 @@ import (
 
 	"reporter/internal/api"
 	"reporter/internal/config"
+	installer "reporter/internal/install"
 	"reporter/internal/logger"
 	"reporter/internal/store"
 )
@@ -27,7 +28,11 @@ func main() {
 			log.Fatal().Err(err).Msg("database store init failed")
 		}
 	} else {
-		log.Fatal().Msg("database dsn is required")
+		if installer.CurrentStatus(cfg).Installed {
+			log.Fatal().Msg("database dsn is required")
+		}
+		log.Warn().Msg("database dsn is not configured; starting install-only mode")
+		appStore = store.InstallOnly()
 	}
 
 	srv := &http.Server{

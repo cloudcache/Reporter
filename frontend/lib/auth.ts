@@ -1,4 +1,4 @@
-export const apiBase = "http://127.0.0.1:8080"
+export const apiBase = import.meta.env.PUBLIC_API_BASE || "http://127.0.0.1:8080"
 export const accessTokenKey = "reporter.accessToken"
 
 const refreshLockKey = "reporter.refresh.lockUntil"
@@ -19,7 +19,8 @@ let redirectingToLogin = false
 let pendingRefresh: Promise<string | null> | null = null
 
 export function requireSession() {
-  return true
+  if (typeof window === "undefined") return false
+  return Boolean(localStorage.getItem(accessTokenKey))
 }
 
 export async function currentUser() {
