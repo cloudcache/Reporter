@@ -311,7 +311,7 @@ func seedIntegrationChannels(ctx context.Context, db *sql.DB) error {
 		{ID: "CHAN-WEWORK", Kind: "wework", Name: "企业微信应用消息", Endpoint: "https://qyapi.weixin.qq.com", AppID: "", CredentialRef: "secret://wework/default", Enabled: false, Config: map[string]interface{}{"provider": "wework", "templateId": "", "agentId": ""}},
 		{ID: "CHAN-MINIPROGRAM", Kind: "mini_program", Name: "微信小程序订阅消息", Endpoint: "https://api.weixin.qq.com", AppID: "", CredentialRef: "secret://wechat-mini-program/default", Enabled: false, Config: map[string]interface{}{"provider": "wechat_mini_program", "templateId": "", "pagePath": "pages/survey/index"}},
 		{ID: "CHAN-QQ", Kind: "qq", Name: "QQ 分享接口", Endpoint: "https://connect.qq.com", AppID: "qq-app-id", CredentialRef: "secret://qq/default", Enabled: false, Config: map[string]interface{}{}},
-		{ID: "CHAN-WEB", Kind: "web", Name: "Web 链接", Endpoint: "http://127.0.0.1:4321/survey", Enabled: true, Config: map[string]interface{}{"allowAnonymous": true}},
+		{ID: "CHAN-WEB", Kind: "web", Name: "Web 链接", Endpoint: "/survey", Enabled: true, Config: map[string]interface{}{"allowAnonymous": true}},
 	}
 	for _, item := range defaults {
 		raw, err := json.Marshal(item.Config)

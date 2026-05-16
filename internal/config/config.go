@@ -24,6 +24,7 @@ type LogConfig struct {
 
 type HTTPConfig struct {
 	Addr              string        `yaml:"addr"`
+	AllowedOrigins    []string      `yaml:"allowedOrigins"`
 	ReadHeaderTimeout time.Duration `yaml:"readHeaderTimeout"`
 	ShutdownTimeout   time.Duration `yaml:"shutdownTimeout"`
 }
@@ -117,9 +118,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Database.ConnMaxLifetime == 0 {
 		cfg.Database.ConnMaxLifetime = 30 * time.Minute
-	}
-	if cfg.Redis.Addr == "" {
-		cfg.Redis.Addr = "127.0.0.1:6379"
 	}
 	if cfg.Redis.TTL == 0 {
 		cfg.Redis.TTL = time.Hour

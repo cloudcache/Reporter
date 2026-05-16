@@ -89,13 +89,15 @@ func NewRouter(deps Dependencies) http.Handler {
 		s.sip = sipgateway.NewDiagoGateway(nil)
 	}
 	r := chi.NewRouter()
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:4321", "http://127.0.0.1:4321"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
+	if len(deps.Config.HTTP.AllowedOrigins) > 0 {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   deps.Config.HTTP.AllowedOrigins,
+			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		}))
+	}
 	r.Use(s.trace)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

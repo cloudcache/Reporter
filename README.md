@@ -11,7 +11,7 @@ The Astro frontend reads the API endpoint from `PUBLIC_API_BASE` at build/dev ti
 PUBLIC_API_BASE= npm run build
 
 # Local development: point Astro at the local API explicitly.
-PUBLIC_API_BASE=http://127.0.0.1:8080 npm run dev
+PUBLIC_API_BASE=http://<api-host>:<api-port> npm run dev
 ```
 
 Do not rely on a hidden localhost fallback in production builds; there is none.

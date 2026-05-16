@@ -143,7 +143,7 @@ func BuildDSN(req DatabaseRequest) string {
 	params.Set("parseTime", "true")
 	params.Set("charset", charset)
 	params.Set("loc", loc)
-	address := net.JoinHostPort(firstNonEmpty(req.Host, "127.0.0.1"), strconv.Itoa(port))
+	address := net.JoinHostPort(strings.TrimSpace(req.Host), strconv.Itoa(port))
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s?%s", req.Username, req.Password, address, req.Database, params.Encode())
 }
 
@@ -360,7 +360,7 @@ database:
 
 redis:
   enabled: %t
-  addr: %s
+  addr: %q
   username: %q
   password: %q
   db: %d

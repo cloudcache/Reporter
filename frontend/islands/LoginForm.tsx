@@ -34,18 +34,24 @@ export function LoginForm() {
         if (data.captchaRequired) await loadCaptcha()
         throw new Error(data.message || text || "登录失败")
       }
-      if (data.accessToken) {
-        localStorage.setItem(accessTokenKey, data.accessToken)
+      if (!data.accessToken || typeof data.accessToken !== "string") {
+        throw new Error("登录接口未返回有效会话，请检查 /api 是否已反向代理到后端服务")
       }
+      localStorage.setItem(accessTokenKey, data.accessToken)
       const me = await fetch(`${apiBase}/api/v1/auth/me`, {
         credentials: "include",
-        headers: data.accessToken ? { Authorization: `Bearer ${data.accessToken}` } : {},
+        headers: { Authorization: `Bearer ${data.accessToken}` },
       })
       if (!me.ok) {
         throw new Error("登录已成功但会话校验失败，请刷新后重试")
       }
+      const contentType = me.headers.get("content-type") || ""
+      if (!contentType.includes("application/json")) {
+        throw new Error("会话校验返回的不是 JSON，请检查 /api 是否被前端静态路由接管")
+      }
+      await me.json()
       const params = new URLSearchParams(window.location.search)
-      window.location.replace(params.get("next") || "/")
+      window.location.replace(safeNext(params.get("next")))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "登录失败")
     } finally {
@@ -91,6 +97,18 @@ export function LoginForm() {
       </div>
     </section>
   )
+}
+
+function safeNext(next: string | null) {
+  if (!next) return "/"
+  try {
+    const url = new URL(next, window.location.origin)
+    if (url.origin !== window.location.origin) return "/"
+    if (url.pathname === "/login" || url.pathname === "/install" || url.pathname.startsWith("/survey")) return "/"
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return "/"
+  }
 }
 
 function safeParse(text: string) {

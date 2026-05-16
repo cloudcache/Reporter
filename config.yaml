@@ -6,6 +6,7 @@ log:
 
 http:
   addr: ":8080"
+  allowedOrigins: []
   readHeaderTimeout: 5s
   shutdownTimeout: 10s
 
@@ -23,7 +24,7 @@ database:
 
 redis:
   enabled: false
-  addr: 127.0.0.1:6379
+  addr: ""
   username: ""
   password: ""
   db: 0

@@ -254,6 +254,12 @@ const isGroupActive = (group: typeof navGroups[number]) => group.items.some((ite
             redirectToLogin();
             return;
           }
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            localStorage.removeItem(accessTokenKey);
+            redirectToLogin();
+            return;
+          }
           const user = await response.json();
           const permissions = Array.isArray(user.permissions) ? user.permissions : [];
           const roles = Array.isArray(user.roles) ? user.roles : [];
