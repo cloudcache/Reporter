@@ -669,7 +669,7 @@ function ProjectDataTab({ draft, templates, forms, setDraft, saveProject }: { dr
       <PhaseCard title="4. 数据范围" text="选择患者、就诊、用药、检查、随访等自动拉取域。" />
     </div>
     <ConfigStep index={1} title="项目基础属性" desc="这些字段决定项目列表、生命周期和报表筛选口径。">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3">
           <Text label="项目名称" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} />
           <Select label="项目类型" value={projectType(draft)} options={Object.keys(projectTypeLabels)} labels={projectTypeLabels} onChange={(v) => setProjectConfig(setDraft, draft, { projectType: v })} />
           <Select label="调查对象" value={draft.targetType} options={Object.keys(targetLabels)} labels={targetLabels} onChange={(v) => setDraft({ ...draft, targetType: v })} />
@@ -703,7 +703,7 @@ function ProjectDataTab({ draft, templates, forms, setDraft, saveProject }: { dr
             <p className="mt-1 leading-6 text-muted">{activeForm ? `当前绑定 ${activeForm.name} v${activeVersion?.version || "-"}，生成渠道后公开问卷严格使用该版本。` : "保持历史模板兼容；正式项目建议先在表单设计器发布版本化表单。"}</p>
           </div>
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
           <Toggle label="允许匿名" checked={draft.anonymous} onChange={(v) => setDraft({ ...draft, anonymous: v, requiresVerification: !v || draft.requiresVerification })} />
           <Toggle label="患者验证" checked={draft.requiresVerification} onChange={(v) => setDraft({ ...draft, requiresVerification: v, anonymous: v ? false : draft.anonymous })} />
           <div className="flex h-10 items-center rounded-lg border border-line px-3 text-sm text-muted">{draft.requiresVerification ? "验证后自动带入患者、就诊和联系方式" : "匿名渠道不绑定患者档案"}</div>
@@ -1310,15 +1310,15 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   return <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm"><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />{label}</label>
 }
 function ConfigStep({ index, title, desc, children }: { index: number; title: string; desc: string; children: ReactNode }) {
-  return <div className="grid gap-4 rounded-lg border border-line bg-white p-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-    <div>
-      <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-primary">{index}</span>
+  return <div className="rounded-lg border border-line bg-white p-4">
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-primary">{index}</span>
+      <div className="min-w-0">
         <h4 className="font-semibold">{title}</h4>
+        <p className="mt-1 text-sm leading-6 text-muted">{desc}</p>
       </div>
-      <p className="mt-2 text-sm leading-6 text-muted">{desc}</p>
     </div>
-    <div className="min-w-0">{children}</div>
+    <div className="mt-4 min-w-0">{children}</div>
   </div>
 }
 function SectionHeader({ title, desc, save: _save }: { title: string; desc: string; save: () => void }) {
@@ -1435,13 +1435,13 @@ function ProjectPropertyEditor({ project, setProject }: { project: Project; setP
         <h3 className="font-semibold">项目属性</h3>
         <p className="mt-1 text-sm text-muted">用结构化字段维护项目属性，不需要手写“属性名=默认值”。</p>
       </div>
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_120px_1fr_100px_auto]">
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <Text label="属性名称" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} />
         <Text label="字段编码" value={draft.code} onChange={(v) => setDraft({ ...draft, code: v })} />
         <Select label="类型" value={draft.type} options={["文本", "数字", "日期", "选项", "开关"]} labels={{ 文本: "文本", 数字: "数字", 日期: "日期", 选项: "选项", 开关: "开关" }} onChange={(v) => setDraft({ ...draft, type: v })} />
         <Text label="默认值" value={draft.defaultValue} onChange={(v) => setDraft({ ...draft, defaultValue: v })} />
         <Toggle label="必填" checked={draft.required} onChange={(v) => setDraft({ ...draft, required: v })} />
-        <button className="mt-6 rounded-lg border border-line px-3 py-2 text-sm text-primary" onClick={addProperty}>添加</button>
+        <button className="self-end rounded-lg border border-line px-3 py-2 text-sm text-primary" onClick={addProperty}>添加</button>
       </div>
       <div className="mt-3 grid gap-2">
         {!properties.length && <div className="rounded-lg border border-dashed border-line bg-gray-50 px-3 py-4 text-sm text-muted">还没有自定义项目属性。常见属性如样本来源、低分阈值、调查批次、责任科室。</div>}
@@ -1460,9 +1460,9 @@ function ProjectPropertyEditor({ project, setProject }: { project: Project; setP
         <h3 className="font-semibold">数据自动拉取范围</h3>
         <p className="mt-1 text-sm text-muted">选择项目需要自动汇聚的数据域，后续表单带入、分析看板和患者 360 都按这里取数。</p>
       </div>
-      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {dataOptions.map((item) => <label key={item.key} className={`grid cursor-pointer gap-2 rounded-lg border p-3 ${dataScope.includes(item.key) ? "border-primary bg-blue-50" : "border-line bg-white"}`}>
-          <span className="flex items-center gap-2 font-medium"><input type="checkbox" checked={dataScope.includes(item.key)} onChange={(event) => toggleScope(item.key, event.target.checked)} />{item.label}</span>
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
+        {dataOptions.map((item) => <label key={item.key} className={`grid min-w-0 cursor-pointer gap-2 rounded-lg border p-3 ${dataScope.includes(item.key) ? "border-primary bg-blue-50" : "border-line bg-white"}`}>
+          <span className="flex min-w-0 items-center gap-2 font-medium"><input className="shrink-0" type="checkbox" checked={dataScope.includes(item.key)} onChange={(event) => toggleScope(item.key, event.target.checked)} /><span className="min-w-0 break-words">{item.label}</span></span>
           <span className="text-xs leading-5 text-muted">{item.desc}</span>
         </label>)}
       </div>

@@ -32,7 +32,7 @@ export function LoginForm() {
       const data = text ? safeParse(text) : {}
       if (!response.ok) {
         if (data.captchaRequired) await loadCaptcha()
-        throw new Error(data.message || text || "登录失败")
+        throw new Error(errorMessage(response, data, text))
       }
       if (!data.accessToken || typeof data.accessToken !== "string") {
         throw new Error("登录接口未返回有效会话，请检查 /api 是否已反向代理到后端服务")
@@ -117,4 +117,14 @@ function safeParse(text: string) {
   } catch {
     return {}
   }
+}
+
+function errorMessage(response: Response, data: Record<string, unknown>, text: string) {
+  if (typeof data.message === "string" && data.message) return data.message
+  const contentType = response.headers.get("content-type") || ""
+  const looksLikeHtml = contentType.includes("text/html") || /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text)
+  if (looksLikeHtml) {
+    return `API 网关返回 ${response.status}，请检查 Caddy /api 反代和后端服务状态`
+  }
+  return text.slice(0, 300) || `登录失败：HTTP ${response.status}`
 }
