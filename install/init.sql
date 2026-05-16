@@ -338,6 +338,19 @@ CREATE TABLE departments (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE user_departments (
+  user_id CHAR(36) NOT NULL,
+  department_id VARCHAR(80) NOT NULL,
+  relation_type ENUM('member','manage') NOT NULL DEFAULT 'member',
+  is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, department_id, relation_type),
+  INDEX idx_user_departments_user (user_id, relation_type),
+  INDEX idx_user_departments_department (department_id, relation_type),
+  CONSTRAINT fk_user_departments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_departments_department FOREIGN KEY (department_id) REFERENCES departments(id)
+);
+
 CREATE TABLE dictionaries (
   id VARCHAR(80) PRIMARY KEY,
   code VARCHAR(120) NOT NULL UNIQUE,
@@ -416,6 +429,58 @@ CREATE TABLE form_library_items (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE form_schema_registry (
+  id CHAR(36) PRIMARY KEY,
+  form_id CHAR(36) NOT NULL,
+  version_id CHAR(36) NOT NULL,
+  schema_name VARCHAR(180) NOT NULL,
+  schema_hash VARCHAR(64) NOT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'draft',
+  description TEXT NULL,
+  json_schema JSON NULL,
+  created_by CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_form_schema_version (version_id),
+  INDEX idx_form_schema_form (form_id, status),
+  INDEX idx_form_schema_hash (schema_hash),
+  CONSTRAINT fk_form_schema_form FOREIGN KEY (form_id) REFERENCES forms(id),
+  CONSTRAINT fk_form_schema_version FOREIGN KEY (version_id) REFERENCES form_versions(id),
+  CONSTRAINT fk_form_schema_creator FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE component_templates (
+  id VARCHAR(120) PRIMARY KEY,
+  category VARCHAR(80) NOT NULL,
+  name VARCHAR(180) NOT NULL,
+  description TEXT NULL,
+  component_type VARCHAR(60) NOT NULL,
+  schema_json JSON NOT NULL,
+  preview_json JSON NULL,
+  tags_json JSON NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_component_templates_category (category, enabled),
+  INDEX idx_component_templates_type (component_type)
+);
+
+CREATE TABLE question_bank_items (
+  id CHAR(36) PRIMARY KEY,
+  category VARCHAR(80) NOT NULL,
+  question_id VARCHAR(120) NOT NULL,
+  label VARCHAR(255) NOT NULL,
+  question_type VARCHAR(60) NOT NULL,
+  options_json JSON NULL,
+  validation_json JSON NULL,
+  tags_json JSON NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_question_bank_question (category, question_id),
+  INDEX idx_question_bank_type (question_type),
+  INDEX idx_question_bank_enabled (enabled)
+);
+
 CREATE TABLE form_submissions (
   id CHAR(36) PRIMARY KEY,
   form_id CHAR(36) NOT NULL,
@@ -438,6 +503,33 @@ CREATE TABLE submission_events (
   payload_json JSON NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_submission_events_submission FOREIGN KEY (submission_id) REFERENCES form_submissions(id)
+);
+
+CREATE TABLE form_attachments (
+  id CHAR(36) PRIMARY KEY,
+  submission_id CHAR(36) NULL,
+  form_id CHAR(36) NULL,
+  form_version_id CHAR(36) NULL,
+  component_id VARCHAR(120) NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  file_kind VARCHAR(40) NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  storage_config_id CHAR(36) NULL,
+  storage_uri TEXT NOT NULL,
+  object_name VARCHAR(512) NULL,
+  checksum VARCHAR(128) NULL,
+  metadata_json JSON NULL,
+  created_by CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_form_attachments_submission (submission_id),
+  INDEX idx_form_attachments_form (form_id, form_version_id),
+  INDEX idx_form_attachments_component (component_id),
+  INDEX idx_form_attachments_kind (file_kind),
+  CONSTRAINT fk_form_attachments_submission FOREIGN KEY (submission_id) REFERENCES form_submissions(id),
+  CONSTRAINT fk_form_attachments_form FOREIGN KEY (form_id) REFERENCES forms(id),
+  CONSTRAINT fk_form_attachments_version FOREIGN KEY (form_version_id) REFERENCES form_versions(id),
+  CONSTRAINT fk_form_attachments_creator FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
 CREATE TABLE data_sources (
@@ -782,11 +874,17 @@ CREATE TABLE satisfaction_issue_events (
 
 CREATE TABLE reports (
   id CHAR(36) PRIMARY KEY,
+  code VARCHAR(120) NULL,
   report_type VARCHAR(60) NOT NULL DEFAULT 'custom',
+  category VARCHAR(80) NULL,
+  subject_type VARCHAR(80) NULL,
+  default_dimension VARCHAR(80) NULL,
+  default_filters_json JSON NULL,
   name VARCHAR(180) NOT NULL,
   description TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_reports_code (code)
 );
 
 CREATE TABLE report_versions (
@@ -822,6 +920,71 @@ CREATE TABLE report_query_results (
   rows_json JSON NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_report_query_results_report FOREIGN KEY (report_id) REFERENCES reports(id)
+);
+
+CREATE TABLE report_query_logs (
+  id CHAR(36) PRIMARY KEY,
+  report_id CHAR(36) NOT NULL,
+  user_id CHAR(36) NULL,
+  project_id CHAR(36) NULL,
+  filters_json JSON NULL,
+  result_count INT NOT NULL DEFAULT 0,
+  duration_ms INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_report_query_logs_report (report_id),
+  INDEX idx_report_query_logs_project (project_id)
+);
+
+CREATE TABLE report_export_jobs (
+  id CHAR(36) PRIMARY KEY,
+  report_id CHAR(36) NOT NULL,
+  project_id CHAR(36) NULL,
+  export_type ENUM('excel','image','pdf','word') NOT NULL DEFAULT 'excel',
+  filters_json JSON NULL,
+  status ENUM('pending','running','success','failed') NOT NULL DEFAULT 'pending',
+  file_path VARCHAR(500) NULL,
+  error_message TEXT NULL,
+  created_by CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP NULL,
+  INDEX idx_report_export_jobs_report (report_id),
+  INDEX idx_report_export_jobs_status (status)
+);
+
+CREATE TABLE report_export_files (
+  job_id CHAR(36) PRIMARY KEY,
+  file_name VARCHAR(240) NOT NULL,
+  mime_type VARCHAR(120) NOT NULL,
+  content LONGBLOB NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_report_export_files_job FOREIGN KEY (job_id) REFERENCES report_export_jobs(id) ON DELETE CASCADE
+);
+
+CREATE TABLE praise_records (
+  id CHAR(36) PRIMARY KEY,
+  project_id CHAR(36) NULL,
+  praise_date DATE NOT NULL,
+  praise_type VARCHAR(80) NULL,
+  praise_method VARCHAR(80) NULL,
+  department_id VARCHAR(120) NULL,
+  department_name VARCHAR(180) NULL,
+  staff_id VARCHAR(120) NULL,
+  staff_name VARCHAR(120) NULL,
+  patient_id CHAR(36) NULL,
+  patient_name VARCHAR(120) NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  reward_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  content TEXT NULL,
+  remark TEXT NULL,
+  status ENUM('draft','confirmed','archived','deleted') NOT NULL DEFAULT 'confirmed',
+  created_by CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_praise_records_project (project_id),
+  INDEX idx_praise_records_date (praise_date),
+  INDEX idx_praise_records_department (department_name),
+  INDEX idx_praise_records_staff (staff_name),
+  INDEX idx_praise_records_status (status)
 );
 
 CREATE TABLE report_queries (
@@ -1075,3 +1238,50 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), kind = VALUES(kind), base_path = VA
 INSERT INTO recording_configs (id, name, mode, storage_config_id, format, retention_days, auto_start, auto_stop, config_json) VALUES
 ('REC-CFG-001', '默认通话录音策略', 'server', 'STOR001', 'wav', 365, TRUE, TRUE, '{"source":"pbx_or_diago"}')
 ON DUPLICATE KEY UPDATE name = VALUES(name), mode = VALUES(mode), storage_config_id = VALUES(storage_config_id), format = VALUES(format), retention_days = VALUES(retention_days), auto_start = VALUES(auto_start), auto_stop = VALUES(auto_stop), config_json = VALUES(config_json);
+
+INSERT INTO sip_endpoints (id, name, wss_url, domain, proxy, config_json) VALUES
+('SIP001', '院内 WebRTC SIP 网关', 'wss://pbx.example.local/ws', 'call.example.local', 'sip:pbx.example.local;transport=wss', '{"enabled":false,"webrtc":true,"transport":"udp","bindHost":"0.0.0.0","trunkUri":"sip:{phone}@carrier.example.local"}')
+ON DUPLICATE KEY UPDATE name = VALUES(name), wss_url = VALUES(wss_url), domain = VALUES(domain), proxy = VALUES(proxy), config_json = VALUES(config_json);
+
+INSERT INTO agent_seats (id, user_id, name, extension, sip_uri, status, skills_json) VALUES
+('SEAT001', NULL, '默认随访坐席', '8001', 'sip:8001@call.example.local', 'available', '["followup","survey"]')
+ON DUPLICATE KEY UPDATE name = VALUES(name), extension = VALUES(extension), sip_uri = VALUES(sip_uri), status = VALUES(status), skills_json = VALUES(skills_json);
+
+INSERT INTO model_providers (id, name, kind, mode, endpoint, model, credential_ref, config_json) VALUES
+('LLM001', '院内大模型网关', 'openai-compatible', 'offline', 'https://llm.example.local/v1', 'medical-call-analyzer', 'secret://llm/primary', '{"supports_audio":true,"supports_json_schema":true,"audio_analysis":true}'),
+('LLM002', '实时语音识别与表单回填', 'realtime-asr', 'realtime', 'wss://llm.example.local/realtime', 'medical-realtime-asr', 'secret://llm/realtime', '{"partial_transcript":true,"form_autofill":true}')
+ON DUPLICATE KEY UPDATE name = VALUES(name), kind = VALUES(kind), mode = VALUES(mode), endpoint = VALUES(endpoint), model = VALUES(model), credential_ref = VALUES(credential_ref), config_json = VALUES(config_json);
+
+INSERT INTO component_templates (id, category, name, description, component_type, schema_json, preview_json, tags_json, enabled) VALUES
+('multi-sheet-table', '多维数据', '多维表格', '用于明细、指标、规格、用药和费用等二维/多维采集', 'table', '{"type":"table","label":"多维表格","columns":["项目","数值","单位"],"rows":["记录1"],"config":{"addRows":true,"addColumns":false}}', '{"columns":["项目","数值","单位"]}', '["table","sheet","multimodal"]', TRUE),
+('computed-field', '计算逻辑', '计算字段', '按表达式从其他字段实时计算得分、费用、风险值', 'computed', '{"type":"computed","label":"计算字段","config":{"expression":"","precision":2,"readonly":true}}', '{}', '["formula","calculation"]', TRUE),
+('media-upload', '多模态附件', '文件/图片/视频/录音上传', '统一上传附件到对象存储并写回附件索引', 'attachment', '{"type":"attachment","label":"附件上传","config":{"accept":["image/*","video/*","audio/*","application/pdf"],"maxSizeMb":200,"multiple":true}}', '{}', '["file","image","video","audio","object-storage"]', TRUE)
+ON DUPLICATE KEY UPDATE category = VALUES(category), name = VALUES(name), description = VALUES(description), component_type = VALUES(component_type), schema_json = VALUES(schema_json), preview_json = VALUES(preview_json), tags_json = VALUES(tags_json), enabled = VALUES(enabled);
+
+INSERT INTO question_bank_items (id, category, question_id, label, question_type, options_json, validation_json, tags_json, enabled) VALUES
+('qb-overall-satisfaction', '满意度', 'overall_satisfaction', '总体满意度', 'single_select', '[{"label":"很不满意","value":"1"},{"label":"不满意","value":"2"},{"label":"一般","value":"3"},{"label":"满意","value":"4"},{"label":"非常满意","value":"5"}]', '{"required":true}', '["satisfaction","score"]', TRUE),
+('qb-recommend-score', '满意度', 'recommend_score', '推荐意愿', 'single_select', '[{"label":"0","value":"0"},{"label":"1","value":"1"},{"label":"2","value":"2"},{"label":"3","value":"3"},{"label":"4","value":"4"},{"label":"5","value":"5"},{"label":"6","value":"6"},{"label":"7","value":"7"},{"label":"8","value":"8"},{"label":"9","value":"9"},{"label":"10","value":"10"}]', '{"required":true}', '["nps","recommend"]', TRUE)
+ON DUPLICATE KEY UPDATE category = VALUES(category), question_id = VALUES(question_id), label = VALUES(label), question_type = VALUES(question_type), options_json = VALUES(options_json), validation_json = VALUES(validation_json), tags_json = VALUES(tags_json), enabled = VALUES(enabled);
+
+INSERT INTO form_library_items (id, kind, label, hint, scenario, components_json, sort_order, enabled) VALUES
+('surveyjs-outpatient-satisfaction', 'template', 'SurveyJS 门诊满意度模板', '面向公开链接、微信和短信渠道的标准调查结构，支持矩阵、NPS、条件题和附件扩展', '调查', '[{"id":"patient_section","type":"section","label":"患者基础信息","required":false,"category":"公共组件"},{"id":"patient_name","type":"text","label":"患者姓名","required":true,"category":"公共组件"},{"id":"patient_phone","type":"text","label":"联系电话","required":false,"category":"公共组件"},{"id":"visit_section","type":"section","label":"就诊信息","required":false,"category":"公共组件"},{"id":"visit_date","type":"date","label":"就诊日期","required":true,"category":"公共组件"},{"id":"department","type":"remote_options","label":"就诊科室","required":true,"category":"公共组件","binding":{"kind":"mysql","dataSourceId":"survey-dict","operation":"select label, value from department_dict","labelPath":"$.label","valuePath":"$.value"}},{"id":"satisfaction_section","type":"section","label":"满意度评价","required":false,"category":"公共组件"},{"id":"overall_satisfaction","type":"likert","label":"总体满意度","required":true,"category":"公共组件","options":[{"label":"很不满意","value":"1"},{"label":"不满意","value":"2"},{"label":"一般","value":"3"},{"label":"满意","value":"4"},{"label":"非常满意","value":"5"}]},{"id":"service_matrix","type":"matrix","label":"分项满意度","required":true,"category":"公共组件","rows":["挂号缴费流程","候诊时间","医生沟通","护士服务","检查检验指引","院内环境"],"columns":["很不满意","不满意","一般","满意","非常满意"]},{"id":"recommend_score","type":"rating","label":"推荐意愿","required":true,"category":"公共组件","scale":10},{"id":"problem_reasons","type":"multi_select","label":"不满意原因","required":false,"category":"公共组件","options":[{"label":"等待时间","value":"wait_time"},{"label":"沟通解释","value":"communication"},{"label":"流程指引","value":"guidance"},{"label":"费用体验","value":"billing"},{"label":"环境设施","value":"environment"}],"visibilityRules":{"when":{"questionId":"overall_satisfaction","operator":"less_than","value":"4"}}},{"id":"feedback","type":"textarea","label":"意见与建议","required":false,"category":"公共组件"},{"id":"surveyjs_attachment","type":"attachment","label":"补充材料","required":false,"category":"公共组件","config":{"accept":"image/*,audio/*,application/pdf","maxSizeMb":50,"multiple":true}}]', 190, TRUE),
+('surveyjs-nps', 'template', 'SurveyJS NPS 推荐度调查', '推荐意愿、原因追问、开放建议，适合快速满意度或体验净推荐值采集', '调查', '[{"id":"nps_section","type":"section","label":"推荐意愿","required":false,"category":"公共组件"},{"id":"recommend_score","type":"rating","label":"您愿意向亲友推荐本院服务吗？","required":true,"category":"公共组件","scale":10,"helpText":"0 表示完全不推荐，10 表示非常愿意推荐。"},{"id":"low_score_reason","type":"multi_select","label":"影响您推荐的主要原因","required":false,"category":"公共组件","options":[{"label":"等待时间","value":"wait_time"},{"label":"沟通解释","value":"communication"},{"label":"流程指引","value":"guidance"},{"label":"费用体验","value":"billing"},{"label":"环境设施","value":"environment"}],"visibilityRules":{"when":{"questionId":"recommend_score","operator":"less_than","value":"7"}}},{"id":"nps_feedback","type":"textarea","label":"还有哪些改进建议？","required":false,"category":"公共组件"}]', 191, TRUE),
+('surveyjs-registration-table', 'template', 'SurveyJS 多维登记表', '包含动态明细表、计算字段和附件，适合预约、登记、会务和宣传报名', '调查', '[{"id":"register_section","type":"section","label":"登记信息","required":false,"category":"公共组件"},{"id":"contact_name","type":"text","label":"联系人","required":true,"category":"公共组件"},{"id":"contact_phone","type":"text","label":"联系电话","required":true,"category":"公共组件","validationRules":{"regex":"^1\\\\d{10}$","message":"请输入 11 位手机号"}},{"id":"items_table","type":"table","label":"报名/预约明细","required":false,"category":"公共组件","rows":["记录 1"],"columns":["项目","人数","备注"],"config":{"addRows":true,"addColumns":false}},{"id":"estimated_total","type":"computed","label":"预计人数","required":false,"category":"公共组件","config":{"expression":"sum(items_table.人数)","precision":0,"readonly":true}}]', 192, TRUE)
+ON DUPLICATE KEY UPDATE kind = VALUES(kind), label = VALUES(label), hint = VALUES(hint), scenario = VALUES(scenario), components_json = VALUES(components_json), sort_order = VALUES(sort_order), enabled = VALUES(enabled);
+
+INSERT INTO reports (id, code, report_type, category, subject_type, default_dimension, default_filters_json, name, description) VALUES
+('RPT_DEPT_SAT', 'department_satisfaction', 'satisfaction', '满意度专题', 'patient', 'department', '{}', '科室满意度统计', '按科室统计评价人数、有效样本、平均满意度和排名'),
+('RPT_DEPT_QUESTION', 'department_question_satisfaction', 'satisfaction', '满意度专题', 'patient', 'department_question', '{}', '科室问题满意度分析', '按科室和题目交叉统计各档人数、评价人数和满意度'),
+('RPT_QUESTION_OPTIONS', 'question_option_distribution', 'satisfaction', '满意度专题', 'patient', 'question', '{}', '题目满意度分析', '按题目统计各选项人数、总人数和满意度'),
+('RPT_LOW_REASON', 'low_score_reason', 'satisfaction', '满意度专题', 'patient', 'reason', '{}', '不满意原因统计', '按低分、多选原因和开放反馈统计问题原因 TopN'),
+('RPT_COMMENTS', 'comments_suggestions', 'satisfaction', '满意度专题', 'patient', 'comment', '{}', '意见与建议统计', '开放题意见建议、关联科室、患者和处理状态列表'),
+('RPT_TREND', 'satisfaction_trend', 'satisfaction', '满意度专题', 'patient', 'month', '{}', '周期满意度分析', '按月统计满意度趋势、样本量和有效率'),
+('RPT_STAFF', 'staff_department_satisfaction', 'satisfaction', '员工与协作科室', 'staff', 'department', '{}', '院内员工/协作科室测评', '支持员工、协作科室和职能科室满意度统计'),
+('RPT_PRAISE', 'praise_statistics', 'complaint', '评价投诉', 'praise', 'department', '{}', '好人好事表扬统计', '按科室、人员、表扬方式统计表扬数量和奖励金额')
+ON DUPLICATE KEY UPDATE code = VALUES(code), report_type = VALUES(report_type), category = VALUES(category), subject_type = VALUES(subject_type), default_dimension = VALUES(default_dimension), default_filters_json = VALUES(default_filters_json), name = VALUES(name), description = VALUES(description);
+
+INSERT INTO form_library_items (id, kind, label, hint, scenario, components_json, sort_order, enabled) VALUES
+('traditional-inpatient-satisfaction', 'template', '住院患者满意度调查', '对标传统行风系统住院患者满意度，预置住院环节、科室环境、医生护士、出院指导等题目', '调查', '[{"id":"patient_section","type":"section","label":"患者基础信息","required":false,"category":"公共组件"},{"id":"patient_name","type":"text","label":"患者姓名","required":false,"category":"公共组件"},{"id":"patient_phone","type":"text","label":"联系电话","required":false,"category":"公共组件"},{"id":"visit_section","type":"section","label":"住院信息","required":false,"category":"公共组件"},{"id":"department","type":"remote_options","label":"住院科室","required":true,"category":"公共组件","binding":{"kind":"mysql","dataSourceId":"survey-dict","operation":"select label, value from department_dict","labelPath":"$.label","valuePath":"$.value"}},{"id":"discharge_date","type":"date","label":"出院日期","required":false,"category":"公共组件"},{"id":"satisfaction_section","type":"section","label":"住院满意度","required":false,"category":"公共组件"},{"id":"inpatient_matrix","type":"matrix","label":"住院服务评价","required":true,"category":"公共组件","rows":["每次用药时，医务人员是否告知药品名称","护士是否用您听得懂的方式解释问题","医生是否尊重您","院内路标和指示是否明确","夜间病房附近是否安静","药房服务是否满意","出院时是否清楚健康注意事项"],"columns":["很不满意","不满意","一般","满意","非常满意"]},{"id":"overall_satisfaction","type":"likert","label":"总体满意度","required":true,"category":"公共组件","options":[{"label":"很不满意","value":"1"},{"label":"不满意","value":"2"},{"label":"一般","value":"3"},{"label":"满意","value":"4"},{"label":"非常满意","value":"5"}]},{"id":"problem_reasons","type":"multi_select","label":"不满意原因","required":false,"category":"公共组件","options":[{"label":"等待时间长","value":"wait_time"},{"label":"解释沟通不足","value":"communication"},{"label":"环境设施","value":"environment"},{"label":"费用问题","value":"billing"},{"label":"服务态度","value":"attitude"}]},{"id":"feedback","type":"textarea","label":"意见与建议","required":false,"category":"公共组件"}]', 193, TRUE),
+('traditional-function-dept-satisfaction', 'template', '职能科室满意度测评', '用于院内员工对职能科室、协作科室进行服务态度、流程、效率和反馈评价', '调查', '[{"id":"staff_section","type":"section","label":"测评对象","required":false,"category":"公共组件"},{"id":"source_department","type":"text","label":"评价人所在科室","required":false,"category":"公共组件"},{"id":"target_department","type":"remote_options","label":"被评价科室","required":true,"category":"公共组件","binding":{"kind":"mysql","dataSourceId":"survey-dict","operation":"select label, value from department_dict","labelPath":"$.label","valuePath":"$.value"}},{"id":"function_dept_matrix","type":"matrix","label":"职能科室问题满意度","required":true,"category":"公共组件","rows":["工作态度和服务意识","工作流程顺畅程度","业务水平和能力","工作效率","问题反馈是否重视并给予反馈","工作纪律和精神风貌"],"columns":["不满意","一般","基本满意","满意","很满意"]},{"id":"overall_satisfaction","type":"likert","label":"总体满意度","required":true,"category":"公共组件","options":[{"label":"不满意","value":"1"},{"label":"一般","value":"2"},{"label":"基本满意","value":"3"},{"label":"满意","value":"4"},{"label":"很满意","value":"5"}]},{"id":"feedback","type":"textarea","label":"意见与建议","required":false,"category":"公共组件"}]', 194, TRUE),
+('traditional-praise-registration', 'template', '好人好事表扬登记', '用于登记表扬日期、表扬方式、人员科室、患者姓名、奖励金额和备注', '调查', '[{"id":"praise_section","type":"section","label":"表扬登记","required":false,"category":"公共组件"},{"id":"praise_date","type":"date","label":"表扬日期","required":true,"category":"公共组件"},{"id":"department_name","type":"remote_options","label":"科室名称","required":true,"category":"公共组件","binding":{"kind":"mysql","dataSourceId":"survey-dict","operation":"select label, value from department_dict","labelPath":"$.label","valuePath":"$.value"}},{"id":"staff_name","type":"text","label":"医护人员姓名","required":true,"category":"公共组件"},{"id":"patient_name","type":"text","label":"患者姓名","required":false,"category":"公共组件"},{"id":"praise_method","type":"single_select","label":"表扬方式","required":true,"category":"公共组件","options":[{"label":"电话表扬","value":"phone"},{"label":"锦旗","value":"banner"},{"label":"感谢信","value":"letter"},{"label":"微信","value":"wechat"},{"label":"现场","value":"onsite"}]},{"id":"quantity","type":"number","label":"数量","required":false,"category":"公共组件"},{"id":"reward_amount","type":"number","label":"退红包金额/奖励金额","required":false,"category":"公共组件"},{"id":"remark","type":"textarea","label":"备注","required":false,"category":"公共组件"}]', 195, TRUE)
+ON DUPLICATE KEY UPDATE label = VALUES(label), hint = VALUES(hint), scenario = VALUES(scenario), components_json = VALUES(components_json), sort_order = VALUES(sort_order), enabled = VALUES(enabled);

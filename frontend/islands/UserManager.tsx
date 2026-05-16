@@ -6,6 +6,10 @@ interface User {
   username: string
   displayName: string
   roles: string[]
+  departmentId?: string
+  departmentName?: string
+  departmentIds?: string[]
+  managedDepartmentIds?: string[]
   createdAt?: string
   updatedAt?: string
 }
@@ -17,11 +21,22 @@ interface Role {
   permissions: string[]
 }
 
+interface Department {
+  id: string
+  code: string
+  name: string
+  kind: string
+  status: string
+}
+
 const emptyUser: User & { password?: string } = {
   id: "",
   username: "",
   displayName: "",
   roles: ["agent"],
+  departmentId: "",
+  departmentIds: [],
+  managedDepartmentIds: [],
   password: "",
 }
 
@@ -38,6 +53,7 @@ function displayRole(roleId: string) {
 export function UserManager() {
   const [users, setUsers] = useState<User[]>([])
   const [roles, setRoles] = useState<Role[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [selectedId, setSelectedId] = useState("")
   const [draft, setDraft] = useState<User & { password?: string }>(emptyUser)
   const [view, setView] = useState<"list" | "form">("list")
@@ -50,12 +66,14 @@ export function UserManager() {
 
   async function load() {
     try {
-      const [userData, roleData] = await Promise.all([
+      const [userData, roleData, departmentData] = await Promise.all([
         authed<User[]>("/api/v1/users"),
         authed<Role[]>("/api/v1/roles"),
+        authed<Department[]>("/api/v1/departments"),
       ])
       setUsers(userData)
       setRoles(roleData)
+      setDepartments(departmentData)
       setMessage("")
     } catch (error) {
       setMessage(`用户 API 未连接：${error instanceof Error ? error.message : "未知错误"}`)
@@ -73,6 +91,9 @@ export function UserManager() {
           displayName: draft.displayName,
           password: draft.password,
           roles: draft.roles,
+          departmentId: draft.departmentId,
+          departmentIds: draft.departmentIds || [],
+          managedDepartmentIds: draft.managedDepartmentIds || [],
         }),
       })
       setUsers(selectedId ? users.map((user) => user.id === selectedId ? saved : user) : [saved, ...users])
@@ -104,6 +125,12 @@ export function UserManager() {
   function toggleRole(roleId: string) {
     const roles = draft.roles.includes(roleId) ? draft.roles.filter((item) => item !== roleId) : [...draft.roles, roleId]
     setDraft({ ...draft, roles })
+  }
+
+  function toggleDepartment(id: string, field: "departmentIds" | "managedDepartmentIds") {
+    const current = draft[field] || []
+    const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    setDraft({ ...draft, [field]: next })
   }
 
   function newUser() {
@@ -146,6 +173,7 @@ export function UserManager() {
                 <th className="px-4 py-3 text-left">用户</th>
                 <th className="px-4 py-3 text-left">登录名</th>
                 <th className="px-4 py-3 text-left">角色</th>
+                <th className="px-4 py-3 text-left">所属科室</th>
                 <th className="px-4 py-3 text-left">创建时间</th>
                 <th className="px-4 py-3 text-right">操作</th>
               </tr>
@@ -156,6 +184,7 @@ export function UserManager() {
                   <td className="px-4 py-3 font-medium">{user.displayName}</td>
                   <td className="px-4 py-3">{user.username}</td>
                   <td className="px-4 py-3">{user.roles?.map(displayRole).join("、")}</td>
+                  <td className="px-4 py-3">{user.departmentName || departmentNames(user.departmentIds, departments) || "-"}</td>
                   <td className="px-4 py-3">{user.createdAt?.slice(0, 10)}</td>
                   <td className="px-4 py-3 text-right">
                     <button className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50" onClick={(event) => { event.stopPropagation(); deleteUser(user.id); }}>删除</button>
@@ -194,6 +223,13 @@ export function UserManager() {
             <span className="text-muted">{selected ? "重置密码" : "初始密码"}</span>
             <input type="password" className="rounded-lg border border-line px-3 py-2" value={draft.password || ""} onChange={(event) => setDraft({ ...draft, password: event.target.value })} />
           </label>
+          <label className="grid gap-1">
+            <span className="text-muted">主属科室</span>
+            <select className="rounded-lg border border-line px-3 py-2" value={draft.departmentId || ""} onChange={(event) => setDraft({ ...draft, departmentId: event.target.value, departmentIds: event.target.value ? [event.target.value, ...(draft.departmentIds || [])] : draft.departmentIds })}>
+              <option value="">请选择</option>
+              {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+            </select>
+          </label>
           <div className="grid gap-2 md:col-span-2 xl:col-span-3">
             <span className="text-muted">角色</span>
             {roles.map((role) => (
@@ -206,9 +242,43 @@ export function UserManager() {
               </label>
             ))}
           </div>
+          <div className="grid gap-2 md:col-span-2 xl:col-span-3">
+            <span className="text-muted">所属科室</span>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {departments.map((department) => (
+                <label key={department.id} className="flex items-center gap-2 rounded-lg border border-line p-3">
+                  <input type="checkbox" checked={(draft.departmentIds || []).includes(department.id) || draft.departmentId === department.id} onChange={() => toggleDepartment(department.id, "departmentIds")} />
+                  <span>
+                    <span className="block font-medium">{department.name}</span>
+                    <span className="text-xs text-muted">{department.code} · {department.kind}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-2 md:col-span-2 xl:col-span-3">
+            <span className="text-muted">管理范围</span>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {departments.map((department) => (
+                <label key={department.id} className="flex items-center gap-2 rounded-lg border border-line p-3">
+                  <input type="checkbox" checked={(draft.managedDepartmentIds || []).includes(department.id)} onChange={() => toggleDepartment(department.id, "managedDepartmentIds")} />
+                  <span>
+                    <span className="block font-medium">{department.name}</span>
+                    <span className="text-xs text-muted">可查看和管理该科室范围数据</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
       )}
     </div>
   )
+}
+
+function departmentNames(ids: string[] | undefined, departments: Department[]) {
+  if (!ids?.length) return ""
+  const names = ids.map((id) => departments.find((department) => department.id === id)?.name).filter(Boolean)
+  return names.join("、")
 }

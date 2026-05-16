@@ -1,0 +1,13 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { FormLibraryManager } from "../../islands/FormLibraryManager"
+---
+
+<AppLayout>
+  <PageHeader title="模板库管理" description="维护调查、随访、投诉、登记等表单模板，并沉淀项目可复用采集方案">
+    <a href="/forms/components" class="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-primary">组件库管理</a>
+    <a href="/forms/design" class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white">表单设计管理</a>
+  </PageHeader>
+  <FormLibraryManager client:load initialKind="template" lockedKind={true} />
+</AppLayout>

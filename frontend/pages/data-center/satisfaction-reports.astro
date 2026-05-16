@@ -1,0 +1,14 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import { ReportManager } from "../../islands/ReportManager"
+---
+
+<AppLayout title="满意度专题报表">
+  <section class="mx-auto grid max-w-7xl gap-5 px-6 py-8">
+    <header>
+      <h1 class="text-3xl font-semibold tracking-tight">满意度专题报表</h1>
+      <p class="mt-2 text-muted">固定报表目录、统一筛选、图表和数据双视图，面向院办、行风办、护理部和科室主任。</p>
+    </header>
+    <ReportManager client:load />
+  </section>
+</AppLayout>

@@ -118,9 +118,9 @@ async function searchAll(keyword: string): Promise<SearchItem[]> {
 
 function matchForms(library: FormLibrary, keyword: string): SearchItem[] {
   const all = [
-    ...(library.templates || []).map((item) => ({ ...item, kind: "表单模板", href: "/forms/library" })),
-    ...(library.commonComponents || []).map((item) => ({ ...item, kind: "表单组件", href: "/forms/library" })),
-    ...(library.atomicComponents || []).map((item) => ({ ...item, kind: "表单字段", href: "/forms/library" })),
+    ...(library.templates || []).map((item) => ({ ...item, kind: "表单模板", href: "/forms/templates" })),
+    ...(library.commonComponents || []).map((item) => ({ ...item, kind: "表单组件", href: "/forms/components" })),
+    ...(library.atomicComponents || []).map((item) => ({ ...item, kind: "表单字段", href: "/forms/components" })),
   ]
   return all.filter((item) => includes(item.id, keyword) || includes(item.label, keyword) || includes(item.scenario, keyword)).slice(0, 8).map((item) => ({
     id: `form-${item.id}`,

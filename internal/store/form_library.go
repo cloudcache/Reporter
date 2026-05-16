@@ -6,15 +6,96 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/google/uuid"
 	"reporter/internal/domain"
 )
 
 func (s *Store) FormLibrary() []domain.FormLibraryItem {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]domain.FormLibraryItem, len(s.formLibrary))
-	copy(items, s.formLibrary)
+	items, _ := s.FormLibraryStrict(context.Background())
 	return items
+}
+
+func (s *Store) FormLibraryStrict(ctx context.Context) ([]domain.FormLibraryItem, error) {
+	db, err := s.openConfiguredDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	return queryFormLibrary(ctx, db)
+}
+
+func (s *Store) FormLibraryItemStrict(ctx context.Context, id string) (domain.FormLibraryItem, bool, error) {
+	db, err := s.openConfiguredDB()
+	if err != nil {
+		return domain.FormLibraryItem{}, false, err
+	}
+	defer db.Close()
+	row := db.QueryRowContext(ctx, `
+SELECT id, kind, label, COALESCE(hint, ''), COALESCE(scenario, ''), components_json, sort_order, enabled
+FROM form_library_items
+WHERE id = ?`, id)
+	var item domain.FormLibraryItem
+	var raw string
+	if err := row.Scan(&item.ID, &item.Kind, &item.Label, &item.Hint, &item.Scenario, &raw, &item.SortOrder, &item.Enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return domain.FormLibraryItem{}, false, nil
+		}
+		return domain.FormLibraryItem{}, false, err
+	}
+	if err := json.Unmarshal([]byte(raw), &item.Components); err != nil {
+		return domain.FormLibraryItem{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *Store) UpsertFormLibraryItemStrict(ctx context.Context, item domain.FormLibraryItem) (domain.FormLibraryItem, error) {
+	db, err := s.openConfiguredDB()
+	if err != nil {
+		return domain.FormLibraryItem{}, err
+	}
+	defer db.Close()
+	if strings.TrimSpace(item.ID) == "" {
+		item.ID = uuid.NewString()
+	}
+	if strings.TrimSpace(item.Kind) == "" {
+		item.Kind = "atom"
+	}
+	if !item.Enabled {
+		item.Enabled = true
+	}
+	components, err := json.Marshal(item.Components)
+	if err != nil {
+		return domain.FormLibraryItem{}, err
+	}
+	_, err = db.ExecContext(ctx, `
+INSERT INTO form_library_items (id, kind, label, hint, scenario, components_json, sort_order, enabled)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE kind = VALUES(kind), label = VALUES(label), hint = VALUES(hint), scenario = VALUES(scenario), components_json = VALUES(components_json), sort_order = VALUES(sort_order), enabled = VALUES(enabled)`,
+		item.ID, item.Kind, item.Label, nullableString(item.Hint), nullableString(item.Scenario), string(components), item.SortOrder, item.Enabled)
+	if err != nil {
+		return domain.FormLibraryItem{}, err
+	}
+	saved, _, err := s.FormLibraryItemStrict(ctx, item.ID)
+	return saved, err
+}
+
+func (s *Store) DeleteFormLibraryItemStrict(ctx context.Context, id string) (domain.FormLibraryItem, error) {
+	before, ok, err := s.FormLibraryItemStrict(ctx, id)
+	if err != nil {
+		return domain.FormLibraryItem{}, err
+	}
+	if !ok {
+		return domain.FormLibraryItem{}, ErrNotFound
+	}
+	db, err := s.openConfiguredDB()
+	if err != nil {
+		return domain.FormLibraryItem{}, err
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `DELETE FROM form_library_items WHERE id = ?`, id); err != nil {
+		return domain.FormLibraryItem{}, err
+	}
+	return before, nil
 }
 
 func (s *Store) LoadFormLibraryFromSQL(ctx context.Context, driver, dsn string) error {
@@ -35,16 +116,6 @@ func (s *Store) LoadFormLibraryFromSQL(ctx context.Context, driver, dsn string) 
 	if err := seedFormLibrary(ctx, db); err != nil {
 		return err
 	}
-	items, err := queryFormLibrary(ctx, db)
-	if err != nil {
-		return err
-	}
-	if len(items) == 0 {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.formLibrary = items
 	return nil
 }
 
@@ -84,7 +155,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 
 func queryFormLibrary(ctx context.Context, db *sql.DB) ([]domain.FormLibraryItem, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT id, kind, label, COALESCE(hint, ''), COALESCE(scenario, ''), components_json, sort_order
+SELECT id, kind, label, COALESCE(hint, ''), COALESCE(scenario, ''), components_json, sort_order, enabled
 FROM form_library_items
 WHERE enabled = TRUE
 ORDER BY sort_order, id`)
@@ -96,7 +167,7 @@ ORDER BY sort_order, id`)
 	for rows.Next() {
 		var item domain.FormLibraryItem
 		var raw string
-		if err := rows.Scan(&item.ID, &item.Kind, &item.Label, &item.Hint, &item.Scenario, &raw, &item.SortOrder); err != nil {
+		if err := rows.Scan(&item.ID, &item.Kind, &item.Label, &item.Hint, &item.Scenario, &raw, &item.SortOrder, &item.Enabled); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(raw), &item.Components); err != nil {
@@ -143,6 +214,27 @@ func DefaultFormLibrary() []domain.FormLibraryItem {
 		{"id": "pain_score", "type": "rating", "label": "疼痛评分", "required": true, "category": "公共组件", "scale": 10},
 		{"id": "image_followup", "type": "remote_options", "label": "相关影像检查", "required": false, "category": "公共组件", "binding": map[string]interface{}{"kind": "dicom", "dataSourceId": "dicom-pacs", "operation": "QIDO-RS /studies?PatientID=:patientId", "labelPath": "$.StudyDescription", "valuePath": "$.StudyInstanceUID"}},
 	}
+	surveyJSOutpatient := append(append([]map[string]interface{}{}, patient...), append(visit, append(satisfactionComponents, map[string]interface{}{
+		"id":       "surveyjs_attachment",
+		"type":     "attachment",
+		"label":    "补充材料",
+		"required": false,
+		"category": "公共组件",
+		"config":   map[string]interface{}{"accept": "image/*,audio/*,application/pdf", "maxSizeMb": 50, "multiple": true},
+	})...)...)
+	surveyJSNPS := []map[string]interface{}{
+		{"id": "nps_section", "type": "section", "label": "推荐意愿", "required": false, "category": "公共组件"},
+		{"id": "recommend_score", "type": "rating", "label": "您愿意向亲友推荐本院服务吗？", "required": true, "category": "公共组件", "scale": 10, "helpText": "0 表示完全不推荐，10 表示非常愿意推荐。"},
+		{"id": "low_score_reason", "type": "multi_select", "label": "影响您推荐的主要原因", "required": false, "category": "公共组件", "options": []map[string]interface{}{{"label": "等待时间", "value": "wait_time"}, {"label": "沟通解释", "value": "communication"}, {"label": "流程指引", "value": "guidance"}, {"label": "费用体验", "value": "billing"}, {"label": "环境设施", "value": "environment"}}, "visibilityRules": map[string]interface{}{"when": map[string]interface{}{"questionId": "recommend_score", "operator": "less_than", "value": "7"}}},
+		{"id": "nps_feedback", "type": "textarea", "label": "还有哪些改进建议？", "required": false, "category": "公共组件"},
+	}
+	surveyJSTable := []map[string]interface{}{
+		{"id": "register_section", "type": "section", "label": "登记信息", "required": false, "category": "公共组件"},
+		{"id": "contact_name", "type": "text", "label": "联系人", "required": true, "category": "公共组件"},
+		{"id": "contact_phone", "type": "text", "label": "联系电话", "required": true, "category": "公共组件", "validationRules": map[string]interface{}{"regex": "^1\\d{10}$", "message": "请输入 11 位手机号"}},
+		{"id": "items_table", "type": "table", "label": "报名/预约明细", "required": false, "category": "公共组件", "rows": []string{"记录 1"}, "columns": []string{"项目", "人数", "备注"}, "config": map[string]interface{}{"addRows": true, "addColumns": false}},
+		{"id": "estimated_total", "type": "computed", "label": "预计人数", "required": false, "category": "公共组件", "config": map[string]interface{}{"expression": "sum(items_table.人数)", "precision": 0, "readonly": true}},
+	}
 	return []domain.FormLibraryItem{
 		{ID: "atom-text", Kind: "atom", Label: "单行文本", Hint: "姓名、编号、短文本", Components: []map[string]interface{}{{"id": "text", "type": "text", "label": "单行文本", "required": false, "category": "原子组件"}}, SortOrder: 10},
 		{ID: "atom-number", Kind: "atom", Label: "数字", Hint: "年龄、评分、次数", Components: []map[string]interface{}{{"id": "number", "type": "number", "label": "数字", "required": false, "category": "原子组件"}}, SortOrder: 11},
@@ -153,6 +245,9 @@ func DefaultFormLibrary() []domain.FormLibraryItem {
 		{ID: "follow-up", Kind: "common", Label: "随访", Hint: "随访方式、时间、症状、用药依从性", Components: follow, SortOrder: 102},
 		{ID: "post-op", Kind: "common", Label: "术后跟踪", Hint: "手术信息、疼痛评分、影像检查", Components: postOp, SortOrder: 103},
 		{ID: "satisfaction", Kind: "common", Label: "满意度", Hint: "总体满意、分项矩阵、推荐意愿、原因和建议", Components: satisfactionComponents, SortOrder: 104},
+		{ID: "surveyjs-outpatient-satisfaction", Kind: "template", Label: "SurveyJS 门诊满意度模板", Hint: "面向公开链接、微信和短信渠道的标准调查结构，支持矩阵、NPS、条件题和附件扩展", Scenario: "调查", Components: surveyJSOutpatient, SortOrder: 190},
+		{ID: "surveyjs-nps", Kind: "template", Label: "SurveyJS NPS 推荐度调查", Hint: "推荐意愿、原因追问、开放建议，适合快速满意度或体验净推荐值采集", Scenario: "调查", Components: surveyJSNPS, SortOrder: 191},
+		{ID: "surveyjs-registration-table", Kind: "template", Label: "SurveyJS 多维登记表", Hint: "包含动态明细表、计算字段和附件，适合预约、登记、会务和宣传报名", Scenario: "调查", Components: surveyJSTable, SortOrder: 192},
 		{ID: "outpatient-satisfaction", Kind: "template", Label: "患者就诊满意度调查", Hint: "由患者基础信息、就诊信息、满意度公共组件组合而成", Scenario: "调查", Components: append(append([]map[string]interface{}{}, patient...), append(visit, satisfactionComponents...)...), SortOrder: 200},
 		{ID: "discharge-follow-up", Kind: "template", Label: "出院后随访问卷", Hint: "出院患者基础信息、随访方式、症状、用药依从性和复诊提醒", Scenario: "随访", Components: append(append([]map[string]interface{}{}, patient...), follow...), SortOrder: 201},
 		{ID: "post-op-follow-up", Kind: "template", Label: "术后随访问卷", Hint: "由患者基础信息、术后跟踪、随访公共组件组合而成", Scenario: "术后", Components: append(append([]map[string]interface{}{}, patient...), append(postOp, follow...)...), SortOrder: 202},

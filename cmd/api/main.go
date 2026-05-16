@@ -27,8 +27,7 @@ func main() {
 			log.Fatal().Err(err).Msg("database store init failed")
 		}
 	} else {
-		appStore = store.InstallOnly()
-		log.Warn().Msg("database dsn is empty; only installation endpoints are available")
+		log.Fatal().Msg("database dsn is required")
 	}
 
 	srv := &http.Server{

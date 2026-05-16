@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -13,55 +14,150 @@ import (
 )
 
 func (s *Store) Departments() []domain.Department {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]domain.Department, 0, len(s.departments))
-	for _, item := range s.departments {
-		items = append(items, item)
-	}
+	items, _ := s.DepartmentsStrict(context.Background())
 	return items
+}
+
+func (s *Store) DepartmentsStrict(ctx context.Context) ([]domain.Department, error) {
+	db, err := s.surveyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	items, err := queryDepartments(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Department, 0, len(items))
+	for _, item := range items {
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (s *Store) CreateDepartment(ctx context.Context, item domain.Department) (domain.Department, error) {
+	if s.dbDSN != "" {
+		db, err := s.surveyDB(ctx)
+		if err != nil {
+			return domain.Department{}, err
+		}
+		defer db.Close()
+		if item.ID == "" {
+			item.ID = "DEPT-" + strings.ToUpper(strings.TrimSpace(item.Code))
+		}
+		if item.Kind == "" {
+			item.Kind = "clinical"
+		}
+		if item.Status == "" {
+			item.Status = "active"
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO departments (id, code, name, kind, status) VALUES (?, ?, ?, ?, ?)`,
+			item.ID, item.Code, item.Name, item.Kind, item.Status); err != nil {
+			return domain.Department{}, err
+		}
+		return queryDepartmentByID(ctx, db, item.ID)
+	}
+	return domain.Department{}, errors.New("database dsn required")
+}
+
+func (s *Store) UpdateDepartment(ctx context.Context, id string, patch domain.Department) (domain.Department, error) {
+	if s.dbDSN != "" {
+		db, err := s.surveyDB(ctx)
+		if err != nil {
+			return domain.Department{}, err
+		}
+		defer db.Close()
+		result, err := db.ExecContext(ctx, `UPDATE departments SET code = ?, name = ?, kind = ?, status = ? WHERE id = ?`,
+			patch.Code, patch.Name, firstNonEmptyStore(patch.Kind, "clinical"), firstNonEmptyStore(patch.Status, "active"), id)
+		if err != nil {
+			return domain.Department{}, err
+		}
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			return domain.Department{}, ErrNotFound
+		}
+		return queryDepartmentByID(ctx, db, id)
+	}
+	return domain.Department{}, errors.New("database dsn required")
+}
+
+func (s *Store) DeleteDepartment(ctx context.Context, id string) (domain.Department, error) {
+	if s.dbDSN != "" {
+		db, err := s.surveyDB(ctx)
+		if err != nil {
+			return domain.Department{}, err
+		}
+		defer db.Close()
+		before, err := queryDepartmentByID(ctx, db, id)
+		if err != nil {
+			return domain.Department{}, err
+		}
+		if _, err := db.ExecContext(ctx, `DELETE FROM departments WHERE id = ?`, id); err != nil {
+			return domain.Department{}, err
+		}
+		return before, nil
+	}
+	return domain.Department{}, errors.New("database dsn required")
 }
 
 func (s *Store) Dictionaries() []domain.Dictionary {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]domain.Dictionary, 0, len(s.dictionaries))
-	for _, item := range s.dictionaries {
-		items = append(items, item)
+	db, err := s.surveyDB(context.Background())
+	if err != nil {
+		return nil
 	}
-	return items
+	defer db.Close()
+	items, err := queryDictionaries(context.Background(), db)
+	if err != nil {
+		return nil
+	}
+	result := make([]domain.Dictionary, 0, len(items))
+	for _, item := range items {
+		result = append(result, item)
+	}
+	return result
 }
 
 func (s *Store) CreateDictionary(item domain.Dictionary) domain.Dictionary {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
+	db, err := s.surveyDB(context.Background())
+	if err != nil {
+		return domain.Dictionary{}
+	}
+	defer db.Close()
 	if item.ID == "" {
 		item.ID = uuid.NewString()
 	}
-	item.CreatedAt = now
-	item.UpdatedAt = now
-	s.dictionaries[item.ID] = item
+	raw, err := json.Marshal(item.Items)
+	if err != nil {
+		return domain.Dictionary{}
+	}
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO dictionaries (id, code, name, category, description, items_json) VALUES (?, ?, ?, ?, ?, ?)`, item.ID, item.Code, item.Name, item.Category, nullableString(item.Description), string(raw)); err != nil {
+		return domain.Dictionary{}
+	}
 	return item
 }
 
 func (s *Store) UpdateDictionary(id string, patch domain.Dictionary) (domain.Dictionary, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	item, ok := s.dictionaries[id]
-	if !ok {
+	db, err := s.surveyDB(context.Background())
+	if err != nil {
+		return domain.Dictionary{}, err
+	}
+	defer db.Close()
+	raw, err := json.Marshal(patch.Items)
+	if err != nil {
+		return domain.Dictionary{}, err
+	}
+	result, err := db.ExecContext(context.Background(), `UPDATE dictionaries SET code = ?, name = ?, category = ?, description = ?, items_json = ? WHERE id = ?`, patch.Code, patch.Name, patch.Category, nullableString(patch.Description), string(raw), id)
+	if err != nil {
+		return domain.Dictionary{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
 		return domain.Dictionary{}, ErrNotFound
 	}
-	item.Code = firstNonEmptyStore(patch.Code, item.Code)
-	item.Name = firstNonEmptyStore(patch.Name, item.Name)
-	item.Category = firstNonEmptyStore(patch.Category, item.Category)
-	item.Description = patch.Description
-	if patch.Items != nil {
-		item.Items = patch.Items
+	items, err := queryDictionaries(context.Background(), db)
+	if err != nil {
+		return domain.Dictionary{}, err
 	}
-	item.UpdatedAt = time.Now().UTC()
-	s.dictionaries[id] = item
-	return item, nil
+	return items[id], nil
 }
 
 func (s *Store) LoadFollowupConfigFromSQL(ctx context.Context, driver, dsn string) error {
@@ -81,36 +177,6 @@ func (s *Store) LoadFollowupConfigFromSQL(ctx context.Context, driver, dsn strin
 	}
 	if err := seedFollowupConfig(ctx, db); err != nil {
 		return err
-	}
-	departments, err := queryDepartments(ctx, db)
-	if err != nil {
-		return err
-	}
-	dictionaries, err := queryDictionaries(ctx, db)
-	if err != nil {
-		return err
-	}
-	plans, err := queryFollowupPlans(ctx, db)
-	if err != nil {
-		return err
-	}
-	tasks, err := queryFollowupTasks(ctx, db)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(departments) > 0 {
-		s.departments = departments
-	}
-	if len(dictionaries) > 0 {
-		s.dictionaries = dictionaries
-	}
-	if len(plans) > 0 {
-		s.followPlans = plans
-	}
-	if len(tasks) > 0 {
-		s.followTasks = tasks
 	}
 	return nil
 }
@@ -340,6 +406,16 @@ func queryDepartments(ctx context.Context, db *sql.DB) (map[string]domain.Depart
 		items[item.ID] = item
 	}
 	return items, rows.Err()
+}
+
+func queryDepartmentByID(ctx context.Context, db *sql.DB, id string) (domain.Department, error) {
+	var item domain.Department
+	err := db.QueryRowContext(ctx, `SELECT id, code, name, kind, status, created_at, updated_at FROM departments WHERE id = ?`, id).
+		Scan(&item.ID, &item.Code, &item.Name, &item.Kind, &item.Status, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Department{}, ErrNotFound
+	}
+	return item, err
 }
 
 func queryDictionaries(ctx context.Context, db *sql.DB) (map[string]domain.Dictionary, error) {
@@ -598,103 +674,86 @@ WHERE ur.role_id = ? OR (? = 'agent' AND ur.role_id = 'admin')`, role, role)
 }
 
 func (s *Store) FormLibraryItem(id string) (domain.FormLibraryItem, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, item := range s.formLibrary {
-		if item.ID == id {
-			return item, true
-		}
-	}
-	return domain.FormLibraryItem{}, false
+	item, ok, _ := s.FormLibraryItemStrict(context.Background(), id)
+	return item, ok
 }
 
 func (s *Store) UpsertFormLibraryItem(item domain.FormLibraryItem) domain.FormLibraryItem {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if item.ID == "" {
-		item.ID = uuid.NewString()
-	}
-	if item.Enabled == false {
-		item.Enabled = true
-	}
-	for index, existing := range s.formLibrary {
-		if existing.ID == item.ID {
-			s.formLibrary[index] = item
-			return item
-		}
-	}
-	s.formLibrary = append(s.formLibrary, item)
-	return item
+	saved, _ := s.UpsertFormLibraryItemStrict(context.Background(), item)
+	return saved
 }
 
 func (s *Store) DeleteFormLibraryItem(id string) (domain.FormLibraryItem, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for index, item := range s.formLibrary {
-		if item.ID == id {
-			s.formLibrary = append(s.formLibrary[:index], s.formLibrary[index+1:]...)
-			return item, nil
-		}
-	}
-	return domain.FormLibraryItem{}, ErrNotFound
+	return s.DeleteFormLibraryItemStrict(context.Background(), id)
 }
 
 func (s *Store) FollowupPlans() []domain.FollowupPlan {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]domain.FollowupPlan, 0, len(s.followPlans))
-	for _, item := range s.followPlans {
-		items = append(items, item)
+	db, err := s.surveyDB(context.Background())
+	if err != nil {
+		return nil
 	}
-	return items
+	defer db.Close()
+	items, err := queryFollowupPlans(context.Background(), db)
+	if err != nil {
+		return nil
+	}
+	result := make([]domain.FollowupPlan, 0, len(items))
+	for _, item := range items {
+		result = append(result, item)
+	}
+	return result
 }
 
 func (s *Store) FollowupPlanByID(id string) (domain.FollowupPlan, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	item, ok := s.followPlans[id]
+	item, ok, _ := s.dbFollowupPlan(context.Background(), id)
 	return item, ok
 }
 
 func (s *Store) CreateFollowupPlan(plan domain.FollowupPlan) domain.FollowupPlan {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
+	db, err := s.surveyDB(context.Background())
+	if err != nil {
+		return domain.FollowupPlan{}
+	}
+	defer db.Close()
 	if plan.ID == "" {
 		plan.ID = uuid.NewString()
 	}
 	if plan.Status == "" {
 		plan.Status = "active"
 	}
-	plan.CreatedAt = now
-	plan.UpdatedAt = now
-	s.followPlans[plan.ID] = plan
-	return plan
+	raw, err := json.Marshal(nonNilMap(plan.Rules))
+	if err != nil {
+		return domain.FollowupPlan{}
+	}
+	_, err = db.ExecContext(context.Background(), `INSERT INTO followup_plans (id, name, scenario, disease_code, department_id, form_template_id, trigger_type, trigger_offset, channel, assignee_role, status, rules_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		plan.ID, plan.Name, plan.Scenario, nullableString(plan.DiseaseCode), nullableString(plan.DepartmentID), plan.FormTemplateID, plan.TriggerType, plan.TriggerOffset, plan.Channel, plan.AssigneeRole, plan.Status, string(raw))
+	if err != nil {
+		return domain.FollowupPlan{}
+	}
+	saved, _, _ := s.dbFollowupPlan(context.Background(), plan.ID)
+	return saved
 }
 
 func (s *Store) UpdateFollowupPlan(id string, patch domain.FollowupPlan) (domain.FollowupPlan, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	plan, ok := s.followPlans[id]
-	if !ok {
+	db, err := s.surveyDB(context.Background())
+	if err != nil {
+		return domain.FollowupPlan{}, err
+	}
+	defer db.Close()
+	raw, err := json.Marshal(nonNilMap(patch.Rules))
+	if err != nil {
+		return domain.FollowupPlan{}, err
+	}
+	result, err := db.ExecContext(context.Background(), `UPDATE followup_plans SET name = ?, scenario = ?, disease_code = ?, department_id = ?, form_template_id = ?, trigger_type = ?, trigger_offset = ?, channel = ?, assignee_role = ?, status = ?, rules_json = ? WHERE id = ?`,
+		patch.Name, patch.Scenario, nullableString(patch.DiseaseCode), nullableString(patch.DepartmentID), patch.FormTemplateID, patch.TriggerType, patch.TriggerOffset, patch.Channel, patch.AssigneeRole, firstNonEmptyStore(patch.Status, "active"), string(raw), id)
+	if err != nil {
+		return domain.FollowupPlan{}, err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
 		return domain.FollowupPlan{}, ErrNotFound
 	}
-	plan.Name = firstNonEmptyStore(patch.Name, plan.Name)
-	plan.Scenario = firstNonEmptyStore(patch.Scenario, plan.Scenario)
-	plan.DiseaseCode = patch.DiseaseCode
-	plan.DepartmentID = patch.DepartmentID
-	plan.FormTemplateID = firstNonEmptyStore(patch.FormTemplateID, plan.FormTemplateID)
-	plan.TriggerType = firstNonEmptyStore(patch.TriggerType, plan.TriggerType)
-	if patch.TriggerOffset != 0 {
-		plan.TriggerOffset = patch.TriggerOffset
-	}
-	plan.Channel = firstNonEmptyStore(patch.Channel, plan.Channel)
-	plan.AssigneeRole = firstNonEmptyStore(patch.AssigneeRole, plan.AssigneeRole)
-	plan.Status = firstNonEmptyStore(patch.Status, plan.Status)
-	plan.Rules = patch.Rules
-	plan.UpdatedAt = time.Now().UTC()
-	s.followPlans[id] = plan
-	return plan, nil
+	saved, _, err := s.dbFollowupPlan(context.Background(), id)
+	return saved, err
 }
 
 func (s *Store) FollowupTasks(status, assigneeID string) []domain.FollowupTask {

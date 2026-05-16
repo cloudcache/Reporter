@@ -5,6 +5,9 @@ import { FormLibraryManager } from "../../islands/FormLibraryManager"
 ---
 
 <AppLayout>
-  <PageHeader title="表单组件库" description="维护原子组件、医疗公共组件和业务模板，供随访和调查复用" />
+  <PageHeader title="表单管理 / 资源库" description="该入口保留兼容；组件库、模板库和表单设计已整合到独立表单管理模块">
+    <a href="/forms" class="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-primary">表单管理</a>
+    <a href="/forms/components" class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white">组件库管理</a>
+  </PageHeader>
   <FormLibraryManager client:load />
 </AppLayout>

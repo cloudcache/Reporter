@@ -139,7 +139,7 @@ export function SatisfactionIndicatorManager() {
           <h2 className="text-base font-semibold">满意度指标体系闭环</h2>
           <p className="mt-1 text-sm text-muted">指标体系作为数据中心资产维护，项目引用后按答卷、科室、医生、病种和就诊类型聚合。</p>
         </div>
-        <a className="rounded-lg border border-line px-3 py-2 text-sm text-primary" href="/design">去绑定问卷题目</a>
+        <a className="rounded-lg border border-line px-3 py-2 text-sm text-primary" href="/forms/design">去绑定问卷题目</a>
       </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-5">
         {indicatorFlow.map((item, index) => <FlowStep key={item.title} index={index + 1} title={item.title} text={item.text} />)}

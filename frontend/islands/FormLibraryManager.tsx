@@ -19,11 +19,11 @@ const templateFlow = [
   { title: "项目绑定", text: "项目选择已发布模板版本，渠道和答卷按版本闭环。" },
 ]
 
-export function FormLibraryManager() {
+export function FormLibraryManager({ initialKind = "all", lockedKind = false }: { initialKind?: string; lockedKind?: boolean }) {
   const [items, setItems] = useState<Item[]>([])
   const [draft, setDraft] = useState<Item>(empty)
   const [json, setJson] = useState("[]")
-  const [activeKind, setActiveKind] = useState("all")
+  const [activeKind, setActiveKind] = useState(initialKind)
   const [message, setMessage] = useState("正在加载组件库...")
   const filteredItems = useMemo(() => activeKind === "all" ? items : items.filter((item) => item.kind === activeKind), [activeKind, items])
 
@@ -64,7 +64,7 @@ export function FormLibraryManager() {
             <h2 className="text-base font-semibold">表单 / 组件模板闭环</h2>
             <p className="mt-1 text-sm text-muted">模板库不是零散素材，按字段、组件、表单、项目绑定四层复用。</p>
           </div>
-          <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white" onClick={() => { setDraft(empty); setJson("[]") }}>新增模板</button>
+          <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white" onClick={() => { setDraft({ ...empty, kind: initialKind === "all" ? "common" : initialKind }); setJson("[]") }}>{initialKind === "template" ? "新增表单模板" : initialKind === "common" ? "新增组件模板" : "新增模板"}</button>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           {templateFlow.map((step, index) => <FlowStep key={step.title} index={index + 1} title={step.title} text={step.text} />)}
@@ -77,13 +77,13 @@ export function FormLibraryManager() {
             <h2 className="text-base font-semibold">模板库</h2>
             <p className="mt-1 text-sm text-muted">先选层级，再维护条目；表单模板用于项目，组件模板用于复用。</p>
           </div>
-          <button className="rounded-lg border border-line px-3 py-2 text-sm" onClick={() => { setDraft(empty); setJson("[]") }}>新增</button>
+          <button className="rounded-lg border border-line px-3 py-2 text-sm" onClick={() => { setDraft({ ...empty, kind: initialKind === "all" ? "common" : initialKind }); setJson("[]") }}>新增</button>
         </div>
-        <div className="flex flex-wrap gap-2 border-b border-line px-4 py-3">
+        {!lockedKind && <div className="flex flex-wrap gap-2 border-b border-line px-4 py-3">
           {[{ key: "all", label: "全部" }, ...kindOrder.map((kind) => ({ key: kind, label: kindLabels[kind] }))].map((item) => (
             <button key={item.key} className={`rounded-lg px-3 py-1.5 text-sm ${activeKind === item.key ? "bg-blue-50 text-primary" : "text-muted hover:bg-gray-50"}`} onClick={() => setActiveKind(item.key)}>{item.label}</button>
           ))}
-        </div>
+        </div>}
         {message && <div className="border-b border-line bg-blue-50 px-4 py-3 text-sm text-primary">{message}</div>}
         <div className="grid gap-2 p-4">{filteredItems.map((item) => <button key={item.id} className="rounded-lg border border-line px-3 py-2 text-left hover:border-primary" onClick={() => edit(item)}>
           <span className="font-medium">{item.label}</span>
@@ -101,7 +101,7 @@ export function FormLibraryManager() {
           <Text label="ID" value={draft.id} onChange={(v) => setDraft({ ...draft, id: v })} />
           <Text label="名称" value={draft.label} onChange={(v) => setDraft({ ...draft, label: v })} />
           <Text label="说明" value={draft.hint} onChange={(v) => setDraft({ ...draft, hint: v })} />
-          <label className="grid gap-1"><span className="text-muted">类型</span><select className="rounded-lg border border-line px-3 py-2" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}><option value="template">表单模板</option><option value="common">组件模板</option><option value="atom">字段组件</option></select></label>
+          <label className="grid gap-1"><span className="text-muted">类型</span><select className="rounded-lg border border-line px-3 py-2" value={draft.kind} disabled={lockedKind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}><option value="template">表单模板</option><option value="common">组件模板</option><option value="atom">字段组件</option></select></label>
           <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-5 text-primary">{kindHints[draft.kind] || "选择模板类型后用于不同层级复用。"}</div>
           <Text label="适用场景" value={draft.scenario || ""} onChange={(v) => setDraft({ ...draft, scenario: v })} />
           <label className="grid gap-1"><span className="text-muted">高级结构 JSON</span><textarea className="min-h-52 rounded-lg border border-line px-3 py-2 font-mono text-xs" value={json} onChange={(e) => setJson(e.target.value)} /></label>

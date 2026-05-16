@@ -1,0 +1,13 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+import { FormLibraryManager } from "../../islands/FormLibraryManager"
+---
+
+<AppLayout>
+  <PageHeader title="组件库管理" description="维护字段组件和业务组件模板，供表单模板和设计器复用">
+    <a href="/forms/templates" class="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-primary">模板库管理</a>
+    <a href="/forms/design" class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white">表单设计管理</a>
+  </PageHeader>
+  <FormLibraryManager client:load initialKind="common" />
+</AppLayout>

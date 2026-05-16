@@ -157,6 +157,14 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Put("/roles/{id}/permissions", s.withPermission("/api/v1/roles", "update", s.updateRolePermissions))
 
 			r.Get("/forms", s.withPermission("/api/v1/forms", "read", s.listForms))
+			r.Get("/forms/schema-registry", s.withPermission("/api/v1/forms", "read", s.listFormSchemaRegistry))
+			r.Get("/forms/component-templates", s.withPermission("/api/v1/forms", "read", s.listComponentTemplates))
+			r.Post("/forms/component-templates", s.withPermission("/api/v1/forms", "update", s.upsertComponentTemplate))
+			r.Get("/forms/question-bank", s.withPermission("/api/v1/forms", "read", s.listQuestionBank))
+			r.Post("/forms/question-bank", s.withPermission("/api/v1/forms", "update", s.upsertQuestionBank))
+			r.Get("/forms/attachments", s.withPermission("/api/v1/forms", "read", s.listFormAttachments))
+			r.Post("/forms/attachments", s.withPermission("/api/v1/forms", "submit", s.createFormAttachment))
+			r.Post("/forms/attachments/upload", s.withPermission("/api/v1/forms", "submit", s.uploadFormAttachment))
 			r.Get("/form-library", s.withPermission("/api/v1/forms", "read", s.formLibrary))
 			r.Post("/form-library", s.withPermission("/api/v1/forms", "update", s.upsertFormLibraryItem))
 			r.Put("/form-library/{id}", s.withPermission("/api/v1/forms", "update", s.upsertFormLibraryItem))
@@ -219,6 +227,18 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Post("/survey-channel-deliveries/{id}/receipt", s.withPermission("/api/v1/forms", "update", s.updateSurveyChannelDeliveryReceipt))
 
 			r.Get("/reports", s.withPermission("/api/v1/reports", "read", s.listReports))
+			r.Get("/reports/definitions", s.withPermission("/api/v1/reports", "read", s.listReports))
+			r.Post("/reports/query", s.withPermission("/api/v1/reports", "query", s.queryReportByCode))
+			r.Post("/reports/drilldown/submissions", s.withPermission("/api/v1/reports", "query", s.reportSubmissionDrilldown))
+			r.Post("/reports/satisfaction/department-question", s.withPermission("/api/v1/reports", "query", func(w http.ResponseWriter, r *http.Request) {
+				s.queryFixedReport(w, r, "department_question_satisfaction")
+			}))
+			r.Post("/reports/satisfaction/question-options", s.withPermission("/api/v1/reports", "query", func(w http.ResponseWriter, r *http.Request) { s.queryFixedReport(w, r, "question_option_distribution") }))
+			r.Post("/reports/satisfaction/trend", s.withPermission("/api/v1/reports", "query", func(w http.ResponseWriter, r *http.Request) { s.queryFixedReport(w, r, "satisfaction_trend") }))
+			r.Post("/reports/satisfaction/comments", s.withPermission("/api/v1/reports", "query", func(w http.ResponseWriter, r *http.Request) { s.queryFixedReport(w, r, "comments_suggestions") }))
+			r.Post("/reports/export", s.withPermission("/api/v1/reports", "read", s.createReportExportJob))
+			r.Get("/report-export-jobs", s.withPermission("/api/v1/reports", "read", s.listReportExportJobs))
+			r.Get("/report-export-jobs/{id}/download", s.withPermission("/api/v1/reports", "read", s.downloadReportExportJob))
 			r.Post("/reports", s.withPermission("/api/v1/reports", "create", s.createReport))
 			r.Get("/reports/{id}", s.withPermission("/api/v1/reports", "read", s.getReport))
 			r.Put("/reports/{id}", s.withPermission("/api/v1/reports", "update", s.updateReport))
@@ -226,6 +246,10 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/reports/{id}/export", s.withPermission("/api/v1/reports", "read", s.exportReport))
 			r.Get("/reports/{id}/insights", s.withPermission("/api/v1/reports", "read", s.reportInsights))
 			r.Post("/reports/{id}/widgets", s.withPermission("/api/v1/reports", "update", s.addReportWidget))
+			r.Get("/praise-records", s.withPermission("/api/v1/complaints", "read", s.listPraiseRecords))
+			r.Post("/praise-records", s.withPermission("/api/v1/complaints", "create", s.createPraiseRecord))
+			r.Put("/praise-records/{id}", s.withPermission("/api/v1/complaints", "update", s.updatePraiseRecord))
+			r.Delete("/praise-records/{id}", s.withPermission("/api/v1/complaints", "delete", s.deletePraiseRecord))
 			r.Get("/evaluation-complaints", s.withPermission("/api/v1/complaints", "read", s.listEvaluationComplaints))
 			r.Post("/evaluation-complaints", s.withPermission("/api/v1/complaints", "create", s.createEvaluationComplaint))
 			r.Get("/evaluation-complaints/stats", s.withPermission("/api/v1/complaints", "read", s.evaluationComplaintStats))
@@ -240,6 +264,9 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Post("/followup/tasks", s.withPermission("/api/v1/followup", "create", s.createFollowupTask))
 			r.Put("/followup/tasks/{id}", s.withPermission("/api/v1/followup", "update", s.updateFollowupTask))
 			r.Get("/departments", s.withPermission("/api/v1/system", "read", s.listDepartments))
+			r.Post("/departments", s.withPermission("/api/v1/system", "create", s.createDepartment))
+			r.Put("/departments/{id}", s.withPermission("/api/v1/system", "update", s.updateDepartment))
+			r.Delete("/departments/{id}", s.withPermission("/api/v1/system", "delete", s.deleteDepartment))
 			r.Get("/dictionaries", s.withPermission("/api/v1/system", "read", s.listDictionaries))
 			r.Post("/dictionaries", s.withPermission("/api/v1/system", "create", s.createDictionary))
 			r.Put("/dictionaries/{id}", s.withPermission("/api/v1/system", "update", s.updateDictionary))
@@ -497,9 +524,12 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 	}
 	before := user
 	updated, err := s.store.UpdateUser(user.ID, domain.User{
-		Username:    user.Username,
-		DisplayName: req.DisplayName,
-		Roles:       user.Roles,
+		Username:             user.Username,
+		DisplayName:          req.DisplayName,
+		Roles:                user.Roles,
+		DepartmentID:         user.DepartmentID,
+		DepartmentIDs:        user.DepartmentIDs,
+		ManagedDepartmentIDs: user.ManagedDepartmentIDs,
 	})
 	if err != nil {
 		statusError(w, err)
@@ -536,10 +566,13 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, err := s.store.UpdateUser(user.ID, domain.User{
-		Username:     user.Username,
-		DisplayName:  user.DisplayName,
-		Roles:        user.Roles,
-		PasswordHash: hash,
+		Username:             user.Username,
+		DisplayName:          user.DisplayName,
+		Roles:                user.Roles,
+		DepartmentID:         user.DepartmentID,
+		DepartmentIDs:        user.DepartmentIDs,
+		ManagedDepartmentIDs: user.ManagedDepartmentIDs,
+		PasswordHash:         hash,
 	})
 	if err != nil {
 		statusError(w, err)
@@ -550,15 +583,23 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Users())
+	users, err := s.store.UsersStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, users)
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username    string   `json:"username"`
-		DisplayName string   `json:"displayName"`
-		Password    string   `json:"password"`
-		Roles       []string `json:"roles"`
+		Username             string   `json:"username"`
+		DisplayName          string   `json:"displayName"`
+		Password             string   `json:"password"`
+		Roles                []string `json:"roles"`
+		DepartmentID         string   `json:"departmentId"`
+		DepartmentIDs        []string `json:"departmentIds"`
+		ManagedDepartmentIDs []string `json:"managedDepartmentIds"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -568,7 +609,11 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	user := s.store.CreateUser(domain.User{Username: req.Username, DisplayName: req.DisplayName, PasswordHash: hash, Roles: req.Roles})
+	user, err := s.store.CreateUserStrict(r.Context(), domain.User{Username: req.Username, DisplayName: req.DisplayName, PasswordHash: hash, Roles: req.Roles, DepartmentID: req.DepartmentID, DepartmentIDs: req.DepartmentIDs, ManagedDepartmentIDs: req.ManagedDepartmentIDs})
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	for _, role := range user.Roles {
 		_ = s.authz.AddRoleForUser(user.ID, role)
 	}
@@ -593,15 +638,18 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Username    string   `json:"username"`
-		DisplayName string   `json:"displayName"`
-		Password    string   `json:"password"`
-		Roles       []string `json:"roles"`
+		Username             string   `json:"username"`
+		DisplayName          string   `json:"displayName"`
+		Password             string   `json:"password"`
+		Roles                []string `json:"roles"`
+		DepartmentID         string   `json:"departmentId"`
+		DepartmentIDs        []string `json:"departmentIds"`
+		ManagedDepartmentIDs []string `json:"managedDepartmentIds"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	patch := domain.User{Username: req.Username, DisplayName: req.DisplayName, Roles: req.Roles}
+	patch := domain.User{Username: req.Username, DisplayName: req.DisplayName, Roles: req.Roles, DepartmentID: req.DepartmentID, DepartmentIDs: req.DepartmentIDs, ManagedDepartmentIDs: req.ManagedDepartmentIDs}
 	if req.Password != "" {
 		hash, err := auth.HashPassword(req.Password)
 		if err != nil {
@@ -960,11 +1008,171 @@ func (s *Server) updateRolePermissions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listForms(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Forms())
+	forms, err := s.store.FormsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, forms)
+}
+
+func (s *Server) listFormSchemaRegistry(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.FormSchemaRegistry(r.Context(), r.URL.Query().Get("formId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) listComponentTemplates(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ComponentTemplates(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) upsertComponentTemplate(w http.ResponseWriter, r *http.Request) {
+	var item domain.ComponentTemplate
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	saved, err := s.store.UpsertComponentTemplate(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "component-template.upsert", "/api/v1/forms/component-templates/"+saved.ID, nil, saved)
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listQuestionBank(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.QuestionBankItems(r.Context(), r.URL.Query().Get("category"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) upsertQuestionBank(w http.ResponseWriter, r *http.Request) {
+	var item domain.QuestionBankItem
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	saved, err := s.store.UpsertQuestionBankItem(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "question-bank.upsert", "/api/v1/forms/question-bank/"+saved.ID, nil, saved)
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) listFormAttachments(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.FormAttachments(r.Context(), r.URL.Query().Get("submissionId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createFormAttachment(w http.ResponseWriter, r *http.Request) {
+	var item domain.FormAttachment
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	item.CreatedBy = actorID(r)
+	saved, err := s.store.CreateFormAttachment(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "form-attachment.create", "/api/v1/forms/attachments/"+saved.ID, nil, saved)
+	writeJSON(w, http.StatusCreated, saved)
+}
+
+func (s *Server) uploadFormAttachment(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 200<<20)
+	if err := r.ParseMultipartForm(200 << 20); err != nil {
+		http.Error(w, "invalid multipart attachment upload", http.StatusBadRequest)
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	storageID := strings.TrimSpace(r.FormValue("storageConfigId"))
+	if storageID == "" {
+		recordingConfig, ok, err := s.store.DefaultRecordingConfigStrict(r.Context())
+		if err != nil {
+			statusError(w, err)
+			return
+		}
+		if ok {
+			storageID = recordingConfig.StorageConfigID
+		}
+	}
+	if storageID == "" {
+		http.Error(w, "storageConfigId is required", http.StatusBadRequest)
+		return
+	}
+	storageConfig, ok, err := s.store.StorageConfigStrict(r.Context(), storageID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	if !ok {
+		http.Error(w, "storage config not found", http.StatusBadRequest)
+		return
+	}
+	storageBackend := recordingstorage.NewFromStorageConfig(storageConfig)
+	result, err := storageBackend.Save(r.Context(), recordingstorage.Request{
+		CallID:       firstNonEmpty(r.FormValue("submissionId"), r.FormValue("formId"), "form-attachment"),
+		OriginalName: header.Filename,
+		MimeType:     header.Header.Get("Content-Type"),
+		Size:         header.Size,
+		Reader:       file,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	item := domain.FormAttachment{
+		SubmissionID:    sanitizePlainText(r.FormValue("submissionId"), 64),
+		FormID:          sanitizePlainText(r.FormValue("formId"), 64),
+		FormVersionID:   sanitizePlainText(r.FormValue("formVersionId"), 64),
+		ComponentID:     firstNonEmpty(sanitizePlainText(r.FormValue("componentId"), 120), "attachment"),
+		FileName:        result.Filename,
+		MimeType:        firstNonEmpty(result.MimeType, header.Header.Get("Content-Type")),
+		FileKind:        sanitizePlainText(r.FormValue("fileKind"), 40),
+		SizeBytes:       result.SizeBytes,
+		StorageConfigID: storageID,
+		StorageURI:      result.URI,
+		ObjectName:      result.ObjectName,
+		CreatedBy:       actorID(r),
+		Metadata:        map[string]interface{}{"backend": result.Backend},
+	}
+	saved, err := s.store.CreateFormAttachment(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "form-attachment.upload", "/api/v1/forms/attachments/"+saved.ID, nil, saved)
+	writeJSON(w, http.StatusCreated, saved)
 }
 
 func (s *Server) formLibrary(w http.ResponseWriter, r *http.Request) {
-	items := s.store.FormLibrary()
+	items, err := s.store.FormLibraryStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	response := map[string][]domain.FormLibraryItem{
 		"templates":        {},
 		"commonComponents": {},
@@ -991,13 +1199,17 @@ func (s *Server) upsertFormLibraryItem(w http.ResponseWriter, r *http.Request) {
 	if id := chi.URLParam(r, "id"); id != "" {
 		item.ID = id
 	}
-	saved := s.store.UpsertFormLibraryItem(item)
+	saved, err := s.store.UpsertFormLibraryItemStrict(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "form-library.upsert", "/api/v1/form-library/"+saved.ID, nil, saved)
 	writeJSON(w, http.StatusOK, saved)
 }
 
 func (s *Server) deleteFormLibraryItem(w http.ResponseWriter, r *http.Request) {
-	item, err := s.store.DeleteFormLibraryItem(chi.URLParam(r, "id"))
+	item, err := s.store.DeleteFormLibraryItemStrict(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		statusError(w, err)
 		return
@@ -2299,13 +2511,12 @@ func (s *Server) publicSurveyEvents(w http.ResponseWriter, r *http.Request) {
 	s.streamSurveyComponents(w, template.Components)
 }
 
-func (s *Server) formTemplateByID(id string) domain.FormLibraryItem {
-	for _, item := range s.store.FormLibrary() {
-		if item.ID == id {
-			return item
-		}
+func (s *Server) formTemplateByID(ctx context.Context, id string) domain.FormLibraryItem {
+	item, ok, err := s.store.FormLibraryItemStrict(ctx, id)
+	if err != nil || !ok {
+		return domain.FormLibraryItem{}
 	}
-	return domain.FormLibraryItem{}
+	return item
 }
 
 func (s *Server) formTemplateForShare(ctx context.Context, share domain.SurveyShareLink) (domain.FormLibraryItem, error) {
@@ -2315,7 +2526,7 @@ func (s *Server) formTemplateForShare(ctx context.Context, share domain.SurveySh
 	} else if ok {
 		return formVersionTemplate(form, version), nil
 	}
-	return s.formTemplateByID(share.FormTemplateID), nil
+	return s.formTemplateByID(ctx, share.FormTemplateID), nil
 }
 
 func (s *Server) resolveFormVersion(ctx context.Context, formID, versionID string) (domain.Form, domain.FormVersion, bool, error) {
@@ -2707,31 +2918,41 @@ func (s *Server) dispatchPhoneDelivery(ctx context.Context, item domain.SurveyCh
 		item.Error = "invalid phone number"
 		return s.store.UpdateSurveyChannelDelivery(ctx, item)
 	}
-	call := s.store.CreateCall(domain.CallSession{
+	call, err := s.store.CreateCallStrict(ctx, domain.CallSession{
 		PatientID:     fmt.Sprint(item.Config["patientId"]),
 		PhoneNumber:   item.Recipient,
 		Status:        "dialing",
 		Direction:     "outbound",
 		InterviewForm: "survey_delivery:" + item.ID,
 	})
+	if err != nil {
+		item.Status = "failed"
+		item.Error = err.Error()
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	}
 	item.Config["callId"] = call.ID
-	if endpoint, ok := s.store.DefaultSipEndpoint(); ok {
+	if endpoint, ok, err := s.store.DefaultSipEndpointStrict(ctx); err != nil {
+		item.Status = "failed"
+		item.Error = err.Error()
+		item.ProviderRef = call.ID
+		return s.store.UpdateSurveyChannelDelivery(ctx, item)
+	} else if ok {
 		result, err := s.sip.Dial(ctx, endpoint, call)
 		if errors.Is(err, sipgateway.ErrDisabled) {
-			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: "connected"})
+			call, _ = s.store.UpdateCallStrict(ctx, call.ID, domain.CallSession{Status: "connected"})
 			item.Status = "sent"
 			item.ProviderRef = call.ID
 			item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
 			return s.store.UpdateSurveyChannelDelivery(ctx, item)
 		}
 		if err != nil {
-			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: "failed"})
+			call, _ = s.store.UpdateCallStrict(ctx, call.ID, domain.CallSession{Status: "failed"})
 			item.Status = "failed"
 			item.Error = err.Error()
 			item.ProviderRef = call.ID
 			return s.store.UpdateSurveyChannelDelivery(ctx, item)
 		}
-		call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: result.Status})
+		call, _ = s.store.UpdateCallStrict(ctx, call.ID, domain.CallSession{Status: result.Status})
 		item.Status = "sent"
 		item.ProviderRef = call.ID
 		item.SentAt = time.Now().UTC().Format("2006-01-02 15:04:05")
@@ -3471,6 +3692,19 @@ func buildReportInsights(result map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{"sentiment": "neutral", "themes": []string{"服务体验", "流程效率", "沟通质量"}, "rootCauses": insights, "suggestions": []string{"对低分指标建立整改责任人和复评周期", "按科室和医生维度持续观察趋势变化", "将开放意见接入主题聚类和典型语句提取"}}
 }
 
+func reportColumns(result map[string]interface{}) []map[string]string {
+	rows, _ := result["rows"].([]map[string]interface{})
+	if len(rows) == 0 {
+		return []map[string]string{}
+	}
+	columns := make([]map[string]string, 0, len(rows[0]))
+	for key := range rows[0] {
+		columns = append(columns, map[string]string{"key": key, "title": key})
+	}
+	sort.Slice(columns, func(i, j int) bool { return columns[i]["key"] < columns[j]["key"] })
+	return columns
+}
+
 func renderReportDocument(report domain.Report, result map[string]interface{}) string {
 	rows, _ := result["rows"].([]map[string]interface{})
 	var b strings.Builder
@@ -3548,6 +3782,145 @@ func simplePDFBytes(text string) []byte {
 	return []byte(b.String())
 }
 
+func renderReportCSV(result map[string]interface{}) string {
+	rows, _ := result["rows"].([]map[string]interface{})
+	if len(rows) == 0 {
+		return "\uFEFF"
+	}
+	fields := make([]string, 0, len(rows[0]))
+	for field := range rows[0] {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	var b strings.Builder
+	b.WriteString("\uFEFF")
+	b.WriteString(strings.Join(fields, ","))
+	b.WriteString("\n")
+	for _, row := range rows {
+		values := make([]string, 0, len(fields))
+		for _, field := range fields {
+			values = append(values, csvCell(fmt.Sprint(row[field])))
+		}
+		b.WriteString(strings.Join(values, ","))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func renderReportSVG(report domain.Report, result map[string]interface{}) string {
+	rows, _ := result["rows"].([]map[string]interface{})
+	title := html.EscapeString(report.Name)
+	var b strings.Builder
+	b.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">`)
+	b.WriteString(`<rect width="1200" height="720" fill="#ffffff"/><text x="48" y="70" font-size="32" font-family="Arial,'Microsoft YaHei'" font-weight="700" fill="#111827">` + title + `</text>`)
+	maxRows := len(rows)
+	if maxRows > 12 {
+		maxRows = 12
+	}
+	for i := 0; i < maxRows; i++ {
+		row := rows[i]
+		label := firstNonEmpty(fmt.Sprint(row["department"]), fmt.Sprint(row["question"]), fmt.Sprint(row["dimensionValue"]), fmt.Sprint(row["month"]), fmt.Sprint(row["reason"]))
+		value := firstNonEmpty(fmt.Sprint(row["satisfaction"]), fmt.Sprint(row["sampleCount"]), fmt.Sprint(row["count"]), fmt.Sprint(row["praiseCount"]))
+		y := 130 + i*44
+		b.WriteString(fmt.Sprintf(`<text x="64" y="%d" font-size="20" font-family="Arial,'Microsoft YaHei'" fill="#374151">%s</text>`, y, html.EscapeString(label)))
+		b.WriteString(fmt.Sprintf(`<text x="620" y="%d" font-size="20" font-family="Arial" fill="#2563eb">%s</text>`, y, html.EscapeString(value)))
+	}
+	b.WriteString(`</svg>`)
+	return b.String()
+}
+
+func csvCell(value string) string {
+	value = strings.ReplaceAll(value, `"`, `""`)
+	if strings.ContainsAny(value, ",\n\r\"") {
+		return `"` + value + `"`
+	}
+	return value
+}
+
+func safeReportFileName(name, ext string) string {
+	base := sanitizeDownloadName(firstNonEmpty(name, "report"))
+	if base == "" {
+		base = "report"
+	}
+	return base + "." + ext
+}
+
+func sanitizeDownloadName(name string) string {
+	name = strings.TrimSpace(name)
+	name = regexp.MustCompile(`[\\/:*?"<>|]+`).ReplaceAllString(name, "_")
+	if len([]rune(name)) > 80 {
+		name = string([]rune(name)[:80])
+	}
+	return name
+}
+
+func reportFiltersFromMap(values map[string]interface{}) domain.ReportQueryFilters {
+	return domain.ReportQueryFilters{
+		DateFrom:   mapStringValue(values, "dateFrom"),
+		DateTo:     mapStringValue(values, "dateTo"),
+		Department: mapStringValue(values, "department"),
+		Doctor:     mapStringValue(values, "doctor"),
+		VisitType:  mapStringValue(values, "visitType"),
+		Channel:    mapStringValue(values, "channel"),
+		QuestionID: mapStringValue(values, "questionId"),
+		Indicator:  mapStringValue(values, "indicatorId"),
+	}
+}
+
+func mapStringValue(values map[string]interface{}, key string) string {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func reportFiltersToMap(filters domain.ReportQueryFilters) map[string]interface{} {
+	return map[string]interface{}{
+		"dateFrom":           filters.DateFrom,
+		"dateTo":             filters.DateTo,
+		"department":         filters.Department,
+		"doctor":             filters.Doctor,
+		"visitType":          filters.VisitType,
+		"channel":            filters.Channel,
+		"questionId":         filters.QuestionID,
+		"indicatorId":        filters.Indicator,
+		"allowedDepartments": filters.AllowedDepartments,
+	}
+}
+
+func hasRole(user domain.User, role string) bool {
+	for _, item := range user.Roles {
+		if item == role {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueStringValues(values []string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
+}
+
+func containsStringFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(value, target) {
+			return true
+		}
+	}
+	return false
+}
+
 func numberFromAny(value interface{}) float64 {
 	switch typed := value.(type) {
 	case float64:
@@ -3594,7 +3967,12 @@ func dateOnlyString(value string) string {
 
 func (s *Server) streamSurveyTemplate(w http.ResponseWriter, formTemplateID string) {
 	components := []map[string]interface{}{}
-	for _, item := range s.store.FormLibrary() {
+	items, err := s.store.FormLibraryStrict(context.Background())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, item := range items {
 		if item.Kind == "template" && (formTemplateID == "" || item.ID == formTemplateID) {
 			components = item.Components
 			break
@@ -3677,12 +4055,80 @@ func (s *Server) updateReport(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) queryReport(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ProjectID string `json:"projectId"`
+		ProjectID string                    `json:"projectId"`
+		Filters   domain.ReportQueryFilters `json:"filters"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
-	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"), req.ProjectID)
+	req.Filters = s.scopedReportFilters(r, req.Filters)
+	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"), req.ProjectID, req.Filters)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) queryReportByCode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ReportCode string                    `json:"reportCode"`
+		ProjectID  string                    `json:"projectId"`
+		Filters    domain.ReportQueryFilters `json:"filters"`
+		View       string                    `json:"view"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Filters = s.scopedReportFilters(r, req.Filters)
+	result, err := s.store.QueryReportData(r.Context(), req.ReportCode, req.ProjectID, req.Filters)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	rows, _ := result["rows"].([]map[string]interface{})
+	response := map[string]interface{}{
+		"columns": reportColumns(result),
+		"rows":    result["rows"],
+		"summary": map[string]interface{}{
+			"sampleCount": len(rows),
+			"validRate":   100,
+		},
+		"chart": map[string]interface{}{
+			"type":   firstNonEmpty(req.View, "table"),
+			"series": result["rows"],
+		},
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) queryFixedReport(w http.ResponseWriter, r *http.Request, reportCode string) {
+	var req struct {
+		ProjectID string                    `json:"projectId"`
+		Filters   domain.ReportQueryFilters `json:"filters"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Filters = s.scopedReportFilters(r, req.Filters)
+	result, err := s.store.QueryReportData(r.Context(), reportCode, req.ProjectID, req.Filters)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) reportSubmissionDrilldown(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProjectID string                    `json:"projectId"`
+		Filters   domain.ReportQueryFilters `json:"filters"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Filters = s.scopedReportFilters(r, req.Filters)
+	result, err := s.store.ReportSubmissionDrilldown(r.Context(), req.ProjectID, req.Filters)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -3691,12 +4137,76 @@ func (s *Server) queryReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reportInsights(w http.ResponseWriter, r *http.Request) {
-	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("projectId"))
+	result, err := s.store.QueryReportData(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("projectId"), s.scopedReportFilters(r, reportFiltersFromQuery(r)))
 	if err != nil {
 		statusError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, buildReportInsights(result))
+}
+
+func (s *Server) listReportExportJobs(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ReportExportJobs(r.Context(), r.URL.Query().Get("reportId"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createReportExportJob(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ReportCode string                 `json:"reportCode"`
+		ReportID   string                 `json:"reportId"`
+		ProjectID  string                 `json:"projectId"`
+		ExportType string                 `json:"exportType"`
+		Filters    map[string]interface{} `json:"filters"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	reportID := firstNonEmpty(req.ReportID, req.ReportCode)
+	if reportID == "" {
+		http.Error(w, "reportCode is required", http.StatusBadRequest)
+		return
+	}
+	typedFilters := reportFiltersFromMap(req.Filters)
+	typedFilters = s.scopedReportFilters(r, typedFilters)
+	job, err := s.store.CreateReportExportJob(r.Context(), domain.ReportExportJob{
+		ReportID:   reportID,
+		ProjectID:  req.ProjectID,
+		ExportType: req.ExportType,
+		Filters:    reportFiltersToMap(typedFilters),
+		Status:     "running",
+		CreatedBy:  actorID(r),
+	})
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	if err := s.generateReportExport(r.Context(), job, typedFilters); err != nil {
+		_ = s.store.FailReportExportJob(r.Context(), job.ID, err.Error())
+		statusError(w, err)
+		return
+	}
+	job, err = s.store.ReportExportJob(r.Context(), job.ID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "report.export.create", "/api/v1/reports/export/"+job.ID, nil, job)
+	writeJSON(w, http.StatusCreated, job)
+}
+
+func (s *Server) downloadReportExportJob(w http.ResponseWriter, r *http.Request) {
+	fileName, mimeType, content, err := s.store.ReportExportFile(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeDownloadName(fileName)))
+	_, _ = w.Write(content)
 }
 
 func (s *Server) exportReport(w http.ResponseWriter, r *http.Request) {
@@ -3705,7 +4215,7 @@ func (s *Server) exportReport(w http.ResponseWriter, r *http.Request) {
 		statusError(w, err)
 		return
 	}
-	result, err := s.store.QueryReportData(r.Context(), report.ID, r.URL.Query().Get("projectId"))
+	result, err := s.store.QueryReportData(r.Context(), report.ID, r.URL.Query().Get("projectId"), s.scopedReportFilters(r, reportFiltersFromQuery(r)))
 	if err != nil {
 		statusError(w, err)
 		return
@@ -3721,6 +4231,151 @@ func (s *Server) exportReport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/msword; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="report.doc"`)
 	_, _ = w.Write([]byte(body))
+}
+
+func (s *Server) scopedReportFilters(r *http.Request, filters domain.ReportQueryFilters) domain.ReportQueryFilters {
+	user, ok := currentUser(r)
+	if !ok || hasRole(user, "admin") {
+		return filters
+	}
+	allowedNames := s.reportAllowedDepartmentNames(r.Context(), user)
+	if len(allowedNames) == 0 {
+		filters.AllowedDepartments = []string{"__NO_DEPARTMENT_SCOPE__"}
+		return filters
+	}
+	if filters.Department != "" && !containsStringFold(allowedNames, filters.Department) {
+		filters.AllowedDepartments = []string{"__NO_DEPARTMENT_SCOPE__"}
+		return filters
+	}
+	filters.AllowedDepartments = allowedNames
+	return filters
+}
+
+func (s *Server) reportAllowedDepartmentNames(ctx context.Context, user domain.User) []string {
+	allowedIDs := uniqueStringValues(append(append([]string{}, user.DepartmentIDs...), user.ManagedDepartmentIDs...))
+	departments, err := s.store.DepartmentsStrict(ctx)
+	if err != nil {
+		return []string{}
+	}
+	names := []string{}
+	for _, department := range departments {
+		for _, id := range allowedIDs {
+			if department.ID == id {
+				names = append(names, department.Name)
+			}
+		}
+	}
+	if len(names) == 0 && user.DepartmentName != "" {
+		names = append(names, user.DepartmentName)
+	}
+	return uniqueStringValues(names)
+}
+
+func (s *Server) generateReportExport(ctx context.Context, job domain.ReportExportJob, filters domain.ReportQueryFilters) error {
+	report, err := s.store.ReportDefinition(ctx, job.ReportID)
+	if err != nil {
+		return err
+	}
+	result, err := s.store.QueryReportData(ctx, report.ID, job.ProjectID, filters)
+	if err != nil {
+		return err
+	}
+	format := strings.ToLower(firstNonEmpty(job.ExportType, "excel"))
+	var fileName, mimeType string
+	var content []byte
+	switch format {
+	case "pdf":
+		fileName = safeReportFileName(report.Name, "pdf")
+		mimeType = "application/pdf"
+		content = simplePDFBytes(stripTags(renderReportDocument(report, result)))
+	case "word":
+		fileName = safeReportFileName(report.Name, "doc")
+		mimeType = "application/msword; charset=utf-8"
+		content = []byte(renderReportDocument(report, result))
+	case "image":
+		fileName = safeReportFileName(report.Name, "svg")
+		mimeType = "image/svg+xml; charset=utf-8"
+		content = []byte(renderReportSVG(report, result))
+	default:
+		fileName = safeReportFileName(report.Name, "csv")
+		mimeType = "text/csv; charset=utf-8"
+		content = []byte(renderReportCSV(result))
+	}
+	_, err = s.store.CompleteReportExportJob(ctx, job.ID, fileName, mimeType, content)
+	return err
+}
+
+func (s *Server) listPraiseRecords(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.PraiseRecords(r.Context(), r.URL.Query().Get("projectId"), r.URL.Query().Get("q"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createPraiseRecord(w http.ResponseWriter, r *http.Request) {
+	var item domain.PraiseRecord
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	item.CreatedBy = actorID(r)
+	created, err := s.store.CreatePraiseRecord(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "praise.create", "/api/v1/praise-records/"+created.ID, nil, created)
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) updatePraiseRecord(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	before, err := s.store.PraiseRecord(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	var patch domain.PraiseRecord
+	if !decodeJSON(w, r, &patch) {
+		return
+	}
+	updated, err := s.store.UpdatePraiseRecord(r.Context(), id, patch)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "praise.update", "/api/v1/praise-records/"+id, before, updated)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) deletePraiseRecord(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	before, err := s.store.PraiseRecord(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	if err := s.store.DeletePraiseRecord(r.Context(), id); err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "praise.delete", "/api/v1/praise-records/"+id, before, nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func reportFiltersFromQuery(r *http.Request) domain.ReportQueryFilters {
+	q := r.URL.Query()
+	return domain.ReportQueryFilters{
+		DateFrom:   q.Get("dateFrom"),
+		DateTo:     q.Get("dateTo"),
+		Department: q.Get("department"),
+		Doctor:     q.Get("doctor"),
+		VisitType:  q.Get("visitType"),
+		Channel:    q.Get("channel"),
+		QuestionID: q.Get("questionId"),
+		Indicator:  q.Get("indicatorId"),
+	}
 }
 
 func (s *Server) addReportWidget(w http.ResponseWriter, r *http.Request) {
@@ -3815,7 +4470,12 @@ func (s *Server) evaluationComplaintStats(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) listSeats(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Seats())
+	seats, err := s.store.SeatsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, seats)
 }
 
 func (s *Server) listFollowupPlans(w http.ResponseWriter, r *http.Request) {
@@ -3898,7 +4558,52 @@ func (s *Server) updateFollowupTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDepartments(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Departments())
+	items, err := s.store.DepartmentsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) createDepartment(w http.ResponseWriter, r *http.Request) {
+	var item domain.Department
+	if !decodeJSON(w, r, &item) {
+		return
+	}
+	created, err := s.store.CreateDepartment(r.Context(), item)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "department.create", "/api/v1/departments/"+created.ID, nil, created)
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) updateDepartment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var patch domain.Department
+	if !decodeJSON(w, r, &patch) {
+		return
+	}
+	updated, err := s.store.UpdateDepartment(r.Context(), id, patch)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "department.update", "/api/v1/departments/"+updated.ID, nil, updated)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) deleteDepartment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	deleted, err := s.store.DeleteDepartment(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	s.audit(r, actorID(r), "department.delete", "/api/v1/departments/"+id, deleted, nil)
+	writeJSON(w, http.StatusOK, deleted)
 }
 
 func (s *Server) listDictionaries(w http.ResponseWriter, r *http.Request) {
@@ -3934,13 +4639,22 @@ func (s *Server) createSeat(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &seat) {
 		return
 	}
-	seat = s.store.CreateSeat(seat)
+	saved, err := s.store.CreateSeatStrict(r.Context(), seat)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	seat = saved
 	s.audit(r, actorID(r), "seat.create", "/api/v1/call-center/seats/"+seat.ID, nil, seat)
 	writeJSON(w, http.StatusCreated, seat)
 }
 
 func (s *Server) getSeat(w http.ResponseWriter, r *http.Request) {
-	seat, ok := s.store.Seat(chi.URLParam(r, "id"))
+	seat, ok, err := s.store.SeatStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -3950,7 +4664,11 @@ func (s *Server) getSeat(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateSeat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.Seat(id)
+	before, ok, err := s.store.SeatStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -3959,7 +4677,7 @@ func (s *Server) updateSeat(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	seat, err := s.store.UpdateSeat(id, patch)
+	seat, err := s.store.UpdateSeatStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -3970,12 +4688,16 @@ func (s *Server) updateSeat(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteSeat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.Seat(id)
+	before, ok, err := s.store.SeatStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	seat, err := s.store.DeleteSeat(id)
+	seat, err := s.store.DeleteSeatStrict(r.Context(), id)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -3985,7 +4707,12 @@ func (s *Server) deleteSeat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSipEndpoints(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.SipEndpoints())
+	endpoints, err := s.store.SipEndpointsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, endpoints)
 }
 
 func (s *Server) createSipEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -3993,13 +4720,22 @@ func (s *Server) createSipEndpoint(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &endpoint) {
 		return
 	}
-	endpoint = s.store.CreateSipEndpoint(endpoint)
+	saved, err := s.store.CreateSipEndpointStrict(r.Context(), endpoint)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	endpoint = saved
 	s.audit(r, actorID(r), "sip_endpoint.create", "/api/v1/call-center/sip-endpoints/"+endpoint.ID, nil, endpoint)
 	writeJSON(w, http.StatusCreated, endpoint)
 }
 
 func (s *Server) getSipEndpoint(w http.ResponseWriter, r *http.Request) {
-	endpoint, ok := s.store.SipEndpoint(chi.URLParam(r, "id"))
+	endpoint, ok, err := s.store.SipEndpointStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4009,7 +4745,11 @@ func (s *Server) getSipEndpoint(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateSipEndpoint(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.SipEndpoint(id)
+	before, ok, err := s.store.SipEndpointStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4018,7 +4758,7 @@ func (s *Server) updateSipEndpoint(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	endpoint, err := s.store.UpdateSipEndpoint(id, patch)
+	endpoint, err := s.store.UpdateSipEndpointStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4029,12 +4769,16 @@ func (s *Server) updateSipEndpoint(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteSipEndpoint(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.SipEndpoint(id)
+	before, ok, err := s.store.SipEndpointStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	endpoint, err := s.store.DeleteSipEndpoint(id)
+	endpoint, err := s.store.DeleteSipEndpointStrict(r.Context(), id)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4044,7 +4788,12 @@ func (s *Server) deleteSipEndpoint(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listStorageConfigs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.StorageConfigs())
+	configs, err := s.store.StorageConfigsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configs)
 }
 
 func (s *Server) createStorageConfig(w http.ResponseWriter, r *http.Request) {
@@ -4052,13 +4801,22 @@ func (s *Server) createStorageConfig(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &config) {
 		return
 	}
-	config = s.store.CreateStorageConfig(config)
+	saved, err := s.store.CreateStorageConfigStrict(r.Context(), config)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	config = saved
 	s.audit(r, actorID(r), "storage_config.create", "/api/v1/call-center/storage-configs/"+config.ID, nil, config)
 	writeJSON(w, http.StatusCreated, config)
 }
 
 func (s *Server) getStorageConfig(w http.ResponseWriter, r *http.Request) {
-	config, ok := s.store.StorageConfig(chi.URLParam(r, "id"))
+	config, ok, err := s.store.StorageConfigStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4068,7 +4826,11 @@ func (s *Server) getStorageConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateStorageConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.StorageConfig(id)
+	before, ok, err := s.store.StorageConfigStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4077,7 +4839,7 @@ func (s *Server) updateStorageConfig(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	config, err := s.store.UpdateStorageConfig(id, patch)
+	config, err := s.store.UpdateStorageConfigStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4088,12 +4850,16 @@ func (s *Server) updateStorageConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteStorageConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.StorageConfig(id)
+	before, ok, err := s.store.StorageConfigStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	config, err := s.store.DeleteStorageConfig(id)
+	config, err := s.store.DeleteStorageConfigStrict(r.Context(), id)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4103,7 +4869,12 @@ func (s *Server) deleteStorageConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listRecordingConfigs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.RecordingConfigs())
+	configs, err := s.store.RecordingConfigsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, configs)
 }
 
 func (s *Server) createRecordingConfig(w http.ResponseWriter, r *http.Request) {
@@ -4111,13 +4882,22 @@ func (s *Server) createRecordingConfig(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &config) {
 		return
 	}
-	config = s.store.CreateRecordingConfig(config)
+	saved, err := s.store.CreateRecordingConfigStrict(r.Context(), config)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	config = saved
 	s.audit(r, actorID(r), "recording_config.create", "/api/v1/call-center/recording-configs/"+config.ID, nil, config)
 	writeJSON(w, http.StatusCreated, config)
 }
 
 func (s *Server) getRecordingConfig(w http.ResponseWriter, r *http.Request) {
-	config, ok := s.store.RecordingConfig(chi.URLParam(r, "id"))
+	config, ok, err := s.store.RecordingConfigStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4127,7 +4907,11 @@ func (s *Server) getRecordingConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateRecordingConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.RecordingConfig(id)
+	before, ok, err := s.store.RecordingConfigStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4136,7 +4920,7 @@ func (s *Server) updateRecordingConfig(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	config, err := s.store.UpdateRecordingConfig(id, patch)
+	config, err := s.store.UpdateRecordingConfigStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4147,12 +4931,16 @@ func (s *Server) updateRecordingConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteRecordingConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.RecordingConfig(id)
+	before, ok, err := s.store.RecordingConfigStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	config, err := s.store.DeleteRecordingConfig(id)
+	config, err := s.store.DeleteRecordingConfigStrict(r.Context(), id)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4162,7 +4950,12 @@ func (s *Server) deleteRecordingConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listCalls(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Calls())
+	calls, err := s.store.CallsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, calls)
 }
 
 func (s *Server) createCall(w http.ResponseWriter, r *http.Request) {
@@ -4175,17 +4968,25 @@ func (s *Server) createCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid phone number", http.StatusBadRequest)
 		return
 	}
-	call = s.store.CreateCall(call)
-	if endpoint, ok := s.store.DefaultSipEndpoint(); ok {
+	saved, err := s.store.CreateCallStrict(r.Context(), call)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	call = saved
+	if endpoint, ok, err := s.store.DefaultSipEndpointStrict(r.Context()); err != nil {
+		statusError(w, err)
+		return
+	} else if ok {
 		result, err := s.sip.Dial(r.Context(), endpoint, call)
 		switch {
 		case errors.Is(err, sipgateway.ErrDisabled):
-			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: "connected"})
+			call, _ = s.store.UpdateCallStrict(r.Context(), call.ID, domain.CallSession{Status: "connected"})
 		case err != nil:
-			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: "failed"})
+			call, _ = s.store.UpdateCallStrict(r.Context(), call.ID, domain.CallSession{Status: "failed"})
 			s.audit(r, actorID(r), "call.gateway.failed", "/api/v1/call-center/calls/"+call.ID, nil, map[string]string{"error": err.Error()})
 		default:
-			call, _ = s.store.UpdateCall(call.ID, domain.CallSession{Status: result.Status})
+			call, _ = s.store.UpdateCallStrict(r.Context(), call.ID, domain.CallSession{Status: result.Status})
 			s.audit(r, actorID(r), "call.gateway.dial", "/api/v1/call-center/calls/"+call.ID, nil, result)
 		}
 	}
@@ -4199,7 +5000,7 @@ func (s *Server) updateCall(w http.ResponseWriter, r *http.Request) {
 	if status == "ended" || status == "recorded" || status == "failed" {
 		_ = s.sip.Hangup(r.Context(), id)
 	}
-	call, err := s.store.UpdateCall(id, domain.CallSession{Status: status, EndedAt: time.Now().UTC()})
+	call, err := s.store.UpdateCallStrict(r.Context(), id, domain.CallSession{Status: status, EndedAt: time.Now().UTC()})
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4209,7 +5010,12 @@ func (s *Server) updateCall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listRecordings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Recordings())
+	recordings, err := s.store.RecordingsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, recordings)
 }
 
 func (s *Server) createRecording(w http.ResponseWriter, r *http.Request) {
@@ -4217,7 +5023,12 @@ func (s *Server) createRecording(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &recording) {
 		return
 	}
-	recording = s.store.CreateRecording(recording)
+	saved, err := s.store.CreateRecordingStrict(r.Context(), recording)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	recording = saved
 	s.audit(r, actorID(r), "recording.create", "/api/v1/call-center/recordings/"+recording.ID, nil, recording)
 	writeJSON(w, http.StatusCreated, recording)
 }
@@ -4240,12 +5051,20 @@ func (s *Server) uploadRecording(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "callId is required", http.StatusBadRequest)
 		return
 	}
-	recordingConfig, ok := s.store.DefaultRecordingConfig()
+	recordingConfig, ok, err := s.store.DefaultRecordingConfigStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.Error(w, "recording config is required", http.StatusBadRequest)
 		return
 	}
-	storageConfig, ok := s.store.StorageConfig(recordingConfig.StorageConfigID)
+	storageConfig, ok, err := s.store.StorageConfigStrict(r.Context(), recordingConfig.StorageConfigID)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.Error(w, "recording storage config is required", http.StatusBadRequest)
 		return
@@ -4263,7 +5082,7 @@ func (s *Server) uploadRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recording := s.store.CreateRecording(domain.Recording{
+	recording, err := s.store.CreateRecordingStrict(r.Context(), domain.Recording{
 		CallID:     callID,
 		StorageURI: result.URI,
 		Duration:   parseOptionalInt(r.FormValue("duration")),
@@ -4275,12 +5094,21 @@ func (s *Server) uploadRecording(w http.ResponseWriter, r *http.Request) {
 		ObjectName: result.ObjectName,
 		Status:     "ready",
 	})
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	s.audit(r, actorID(r), "recording.upload", "/api/v1/call-center/recordings/"+recording.ID, nil, recording)
 	writeJSON(w, http.StatusCreated, recording)
 }
 
 func (s *Server) listModelProviders(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.ModelProviders())
+	providers, err := s.store.ModelProvidersStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, providers)
 }
 
 func (s *Server) createModelProvider(w http.ResponseWriter, r *http.Request) {
@@ -4288,13 +5116,22 @@ func (s *Server) createModelProvider(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &provider) {
 		return
 	}
-	provider = s.store.CreateModelProvider(provider)
+	saved, err := s.store.CreateModelProviderStrict(r.Context(), provider)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	provider = saved
 	s.audit(r, actorID(r), "model_provider.create", "/api/v1/call-center/model-providers/"+provider.ID, nil, provider)
 	writeJSON(w, http.StatusCreated, provider)
 }
 
 func (s *Server) getModelProvider(w http.ResponseWriter, r *http.Request) {
-	provider, ok := s.store.ModelProvider(chi.URLParam(r, "id"))
+	provider, ok, err := s.store.ModelProviderStrict(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4304,7 +5141,11 @@ func (s *Server) getModelProvider(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateModelProvider(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.ModelProvider(id)
+	before, ok, err := s.store.ModelProviderStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -4313,7 +5154,7 @@ func (s *Server) updateModelProvider(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &patch) {
 		return
 	}
-	provider, err := s.store.UpdateModelProvider(id, patch)
+	provider, err := s.store.UpdateModelProviderStrict(r.Context(), id, patch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4324,12 +5165,16 @@ func (s *Server) updateModelProvider(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteModelProvider(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	before, ok := s.store.ModelProvider(id)
+	before, ok, err := s.store.ModelProviderStrict(r.Context(), id)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	provider, err := s.store.DeleteModelProvider(id)
+	provider, err := s.store.DeleteModelProviderStrict(r.Context(), id)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4339,11 +5184,21 @@ func (s *Server) deleteModelProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAnalyses(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Analyses())
+	items, err := s.store.AnalysesStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) listRealtimeAssistSessions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.RealtimeAssistSessions())
+	items, err := s.store.RealtimeAssistSessionsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) createRealtimeAssistSession(w http.ResponseWriter, r *http.Request) {
@@ -4351,7 +5206,12 @@ func (s *Server) createRealtimeAssistSession(w http.ResponseWriter, r *http.Requ
 	if !decodeJSON(w, r, &session) {
 		return
 	}
-	session = s.store.CreateRealtimeAssistSession(session)
+	saved, err := s.store.CreateRealtimeAssistSessionStrict(r.Context(), session)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	session = saved
 	s.audit(r, actorID(r), "realtime_assist.create", "/api/v1/call-center/realtime-assist/"+session.ID, nil, session)
 	writeJSON(w, http.StatusCreated, session)
 }
@@ -4366,7 +5226,7 @@ func (s *Server) addRealtimeTranscript(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	session, err := s.store.AddRealtimeTranscript(chi.URLParam(r, "id"), domain.RealtimeTranscript{Speaker: req.Speaker, Text: req.Text, IsFinal: req.IsFinal}, req.FormPatch)
+	session, err := s.store.AddRealtimeTranscriptStrict(r.Context(), chi.URLParam(r, "id"), domain.RealtimeTranscript{Speaker: req.Speaker, Text: req.Text, IsFinal: req.IsFinal}, req.FormPatch)
 	if err != nil {
 		statusError(w, err)
 		return
@@ -4376,7 +5236,12 @@ func (s *Server) addRealtimeTranscript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listOfflineAnalysisJobs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.OfflineAnalysisJobs())
+	items, err := s.store.OfflineAnalysisJobsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) createOfflineAnalysisJob(w http.ResponseWriter, r *http.Request) {
@@ -4384,13 +5249,23 @@ func (s *Server) createOfflineAnalysisJob(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(w, r, &job) {
 		return
 	}
-	job = s.store.CreateOfflineAnalysisJob(job)
+	saved, err := s.store.CreateOfflineAnalysisJobStrict(r.Context(), job)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	job = saved
 	s.audit(r, actorID(r), "offline_analysis.create", "/api/v1/call-center/offline-analysis-jobs/"+job.ID, nil, job)
 	writeJSON(w, http.StatusCreated, job)
 }
 
 func (s *Server) listInterviews(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Interviews())
+	items, err := s.store.InterviewsStrict(r.Context())
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) createInterview(w http.ResponseWriter, r *http.Request) {
@@ -4398,7 +5273,12 @@ func (s *Server) createInterview(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &interview) {
 		return
 	}
-	interview = s.store.CreateInterview(interview)
+	saved, err := s.store.CreateInterviewStrict(r.Context(), interview)
+	if err != nil {
+		statusError(w, err)
+		return
+	}
+	interview = saved
 	s.audit(r, actorID(r), "interview.create", "/api/v1/call-center/interviews/"+interview.ID, nil, interview)
 	writeJSON(w, http.StatusCreated, interview)
 }

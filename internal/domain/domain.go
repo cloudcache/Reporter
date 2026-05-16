@@ -10,13 +10,18 @@ type Role struct {
 }
 
 type User struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	DisplayName  string    `json:"displayName"`
-	PasswordHash string    `json:"-"`
-	Roles        []string  `json:"roles"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt,omitempty"`
+	ID                   string    `json:"id"`
+	Username             string    `json:"username"`
+	DisplayName          string    `json:"displayName"`
+	PasswordHash         string    `json:"-"`
+	Roles                []string  `json:"roles"`
+	DepartmentID         string    `json:"departmentId,omitempty"`
+	DepartmentCode       string    `json:"departmentCode,omitempty"`
+	DepartmentName       string    `json:"departmentName,omitempty"`
+	DepartmentIDs        []string  `json:"departmentIds,omitempty"`
+	ManagedDepartmentIDs []string  `json:"managedDepartmentIds,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt,omitempty"`
 }
 
 type Patient struct {
@@ -504,6 +509,66 @@ type FormLibraryItem struct {
 	Enabled    bool                     `json:"enabled"`
 }
 
+type FormSchemaRegistryItem struct {
+	ID          string                 `json:"id"`
+	FormID      string                 `json:"formId"`
+	VersionID   string                 `json:"versionId"`
+	SchemaName  string                 `json:"schemaName"`
+	SchemaHash  string                 `json:"schemaHash"`
+	Status      string                 `json:"status"`
+	Description string                 `json:"description,omitempty"`
+	JSONSchema  map[string]interface{} `json:"jsonSchema,omitempty"`
+	CreatedBy   string                 `json:"createdBy,omitempty"`
+	CreatedAt   time.Time              `json:"createdAt"`
+}
+
+type ComponentTemplate struct {
+	ID            string                 `json:"id"`
+	Category      string                 `json:"category"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description,omitempty"`
+	ComponentType string                 `json:"componentType"`
+	Schema        map[string]interface{} `json:"schema"`
+	Preview       map[string]interface{} `json:"preview,omitempty"`
+	Tags          []string               `json:"tags,omitempty"`
+	Enabled       bool                   `json:"enabled"`
+	CreatedAt     time.Time              `json:"createdAt"`
+	UpdatedAt     time.Time              `json:"updatedAt"`
+}
+
+type QuestionBankItem struct {
+	ID              string                 `json:"id"`
+	Category        string                 `json:"category"`
+	QuestionID      string                 `json:"questionId"`
+	Label           string                 `json:"label"`
+	QuestionType    string                 `json:"questionType"`
+	Options         []map[string]string    `json:"options,omitempty"`
+	ValidationRules map[string]interface{} `json:"validationRules,omitempty"`
+	Tags            []string               `json:"tags,omitempty"`
+	Enabled         bool                   `json:"enabled"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+}
+
+type FormAttachment struct {
+	ID              string                 `json:"id"`
+	SubmissionID    string                 `json:"submissionId,omitempty"`
+	FormID          string                 `json:"formId,omitempty"`
+	FormVersionID   string                 `json:"formVersionId,omitempty"`
+	ComponentID     string                 `json:"componentId"`
+	FileName        string                 `json:"fileName"`
+	MimeType        string                 `json:"mimeType"`
+	FileKind        string                 `json:"fileKind"`
+	SizeBytes       int64                  `json:"sizeBytes"`
+	StorageConfigID string                 `json:"storageConfigId,omitempty"`
+	StorageURI      string                 `json:"storageUri"`
+	ObjectName      string                 `json:"objectName,omitempty"`
+	Checksum        string                 `json:"checksum,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	CreatedBy       string                 `json:"createdBy,omitempty"`
+	CreatedAt       time.Time              `json:"createdAt"`
+}
+
 type Department struct {
 	ID        string    `json:"id"`
 	Code      string    `json:"code"`
@@ -669,13 +734,18 @@ type DataSourceQualityResult struct {
 }
 
 type Report struct {
-	ID          string         `json:"id"`
-	Type        string         `json:"type,omitempty"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Widgets     []ReportWidget `json:"widgets,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	ID               string                 `json:"id"`
+	Code             string                 `json:"code,omitempty"`
+	Type             string                 `json:"type,omitempty"`
+	Category         string                 `json:"category,omitempty"`
+	SubjectType      string                 `json:"subjectType,omitempty"`
+	DefaultDimension string                 `json:"defaultDimension,omitempty"`
+	DefaultFilters   map[string]interface{} `json:"defaultFilters,omitempty"`
+	Name             string                 `json:"name"`
+	Description      string                 `json:"description"`
+	Widgets          []ReportWidget         `json:"widgets,omitempty"`
+	CreatedAt        time.Time              `json:"createdAt"`
+	UpdatedAt        time.Time              `json:"updatedAt"`
 }
 
 type ReportWidget struct {
@@ -687,6 +757,54 @@ type ReportWidget struct {
 	VisSpec    map[string]interface{} `json:"visSpec,omitempty"`
 	DataSource string                 `json:"dataSource,omitempty"`
 	CreatedAt  time.Time              `json:"createdAt"`
+}
+
+type ReportQueryFilters struct {
+	DateFrom           string   `json:"dateFrom,omitempty"`
+	DateTo             string   `json:"dateTo,omitempty"`
+	Department         string   `json:"department,omitempty"`
+	Doctor             string   `json:"doctor,omitempty"`
+	VisitType          string   `json:"visitType,omitempty"`
+	Channel            string   `json:"channel,omitempty"`
+	QuestionID         string   `json:"questionId,omitempty"`
+	Indicator          string   `json:"indicatorId,omitempty"`
+	AllowedDepartments []string `json:"-"`
+}
+
+type ReportExportJob struct {
+	ID           string                 `json:"id"`
+	ReportID     string                 `json:"reportId"`
+	ProjectID    string                 `json:"projectId,omitempty"`
+	ExportType   string                 `json:"exportType"`
+	Filters      map[string]interface{} `json:"filters,omitempty"`
+	Status       string                 `json:"status"`
+	FilePath     string                 `json:"filePath,omitempty"`
+	ErrorMessage string                 `json:"errorMessage,omitempty"`
+	CreatedBy    string                 `json:"createdBy,omitempty"`
+	CreatedAt    time.Time              `json:"createdAt"`
+	FinishedAt   *time.Time             `json:"finishedAt,omitempty"`
+}
+
+type PraiseRecord struct {
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"projectId,omitempty"`
+	PraiseDate     string    `json:"praiseDate"`
+	PraiseType     string    `json:"praiseType,omitempty"`
+	PraiseMethod   string    `json:"praiseMethod,omitempty"`
+	DepartmentID   string    `json:"departmentId,omitempty"`
+	DepartmentName string    `json:"departmentName,omitempty"`
+	StaffID        string    `json:"staffId,omitempty"`
+	StaffName      string    `json:"staffName,omitempty"`
+	PatientID      string    `json:"patientId,omitempty"`
+	PatientName    string    `json:"patientName,omitempty"`
+	Quantity       int       `json:"quantity"`
+	RewardAmount   float64   `json:"rewardAmount"`
+	Content        string    `json:"content,omitempty"`
+	Remark         string    `json:"remark,omitempty"`
+	Status         string    `json:"status"`
+	CreatedBy      string    `json:"createdBy,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt,omitempty"`
 }
 
 type EvaluationComplaint struct {

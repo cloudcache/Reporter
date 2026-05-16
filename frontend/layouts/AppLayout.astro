@@ -5,60 +5,102 @@ import { GlobalSearch } from "../islands/GlobalSearch"
 
 const navGroups = [
   {
-    label: "业务工作台",
+    id: "workspace",
+    label: "工作台",
+    icon: "G",
     items: [
-      { href: "/", label: "概览", icon: "G" },
-      { href: "/projects", label: "项目", icon: "Q", resource: "/api/v1/forms", action: "read" },
-      { href: "/patients", label: "患者管理", icon: "P", resource: "/api/v1/patients", action: "read" },
-      { href: "/schedule", label: "日历日程", icon: "K", resource: "/api/v1/followup", action: "read" },
-      { href: "/design", label: "表单设计", icon: "F", resource: "/api/v1/forms", action: "update" },
+      { href: "/", label: "概览", resource: "", action: "" },
+      { href: "/schedule", label: "日历日程", resource: "/api/v1/followup", action: "read" },
     ],
   },
   {
+    id: "projects",
+    label: "项目管理",
+    icon: "Q",
+    items: [
+      { href: "/projects", label: "项目列表", resource: "/api/v1/forms", action: "read" },
+      { href: "/projects/new", label: "新建项目", resource: "/api/v1/forms", action: "create" },
+      { href: "/projects/dashboard", label: "项目看板", resource: "/api/v1/forms", action: "read" },
+      { href: "/projects/edit", label: "项目属性", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/lifecycle", label: "生命周期", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/people", label: "角色人员", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/tasks", label: "任务模板", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/data", label: "表单数据", resource: "/api/v1/forms", action: "read" },
+      { href: "/projects/channels", label: "渠道发布", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/answers", label: "答卷入库", resource: "/api/v1/forms", action: "read" },
+      { href: "/projects/indicators", label: "指标体系", resource: "/api/v1/forms", action: "read" },
+      { href: "/projects/cleaning", label: "数据清洗", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/analysis", label: "分析看板", resource: "/api/v1/reports", action: "read" },
+      { href: "/projects/issues", label: "问题整改", resource: "/api/v1/complaints", action: "update" },
+      { href: "/projects/modules", label: "能力模块", resource: "/api/v1/forms", action: "update" },
+      { href: "/projects/phases", label: "期次管理", resource: "/api/v1/forms", action: "update" },
+    ],
+  },
+  {
+    id: "patient_followup",
+    label: "患者随访",
+    icon: "P",
+    items: [
+      { href: "/patients", label: "患者管理", resource: "/api/v1/patients", action: "read" },
+      { href: "/followups/tasks", label: "随访任务", resource: "/api/v1/followup", action: "read" },
+      { href: "/followups/plans", label: "随访方案", resource: "/api/v1/followup", action: "create" },
+      { href: "/followups/groups", label: "患者分组", resource: "/api/v1/followup", action: "read" },
+      { href: "/call-center", label: "坐席工作台", resource: "/api/v1/call-center", action: "read" },
+    ],
+  },
+  {
+    id: "forms",
+    label: "表单管理",
+    icon: "F",
+    items: [
+      { href: "/forms", label: "表单总览", resource: "/api/v1/forms", action: "read" },
+      { href: "/forms/components", label: "组件库管理", resource: "/api/v1/forms", action: "update" },
+      { href: "/forms/templates", label: "模板库管理", resource: "/api/v1/forms", action: "update" },
+      { href: "/forms/design", label: "表单设计管理", resource: "/api/v1/forms", action: "update" },
+    ],
+  },
+  {
+    id: "data_center",
     label: "数据中心",
+    icon: "D",
     items: [
-      { href: "/data-center/datasets", label: "数据集", icon: "D", resource: "/api/v1/datasets", action: "read" },
-      { href: "/data-center/reports", label: "分析报表", icon: "R", resource: "/api/v1/reports", action: "read" },
-      { href: "/data-center/complaints", label: "评价投诉", icon: "E", resource: "/api/v1/complaints", action: "read" },
-      { href: "/data-center/indicators", label: "指标体系", icon: "X", resource: "/api/v1/forms", action: "read" },
+      { href: "/data-center/indicators", label: "指标体系", resource: "/api/v1/forms", action: "read" },
+      { href: "/data-center/datasets", label: "数据集", resource: "/api/v1/datasets", action: "read" },
+      { href: "/data-center/satisfaction-reports", label: "满意度专题报表", resource: "/api/v1/reports", action: "read" },
+      { href: "/data-center/complaints", label: "评价投诉分析", resource: "/api/v1/complaints", action: "read" },
+      { href: "/data-center/praise", label: "表扬管理", resource: "/api/v1/complaints", action: "read" },
+      { href: "/data-center/reports", label: "分析报表", resource: "/api/v1/reports", action: "read" },
+      { href: "/data-center/exports", label: "导出中心", resource: "/api/v1/reports", action: "read" },
     ],
   },
   {
-    label: "呼叫中心",
-    items: [
-      { href: "/followups/tasks", label: "随访任务", icon: "T", resource: "/api/v1/followup", action: "read" },
-      { href: "/followups/plans", label: "随访方案", icon: "L", resource: "/api/v1/followup", action: "create" },
-      { href: "/call-center", label: "坐席管理", icon: "C", resource: "/api/v1/call-center", action: "read" },
-    ],
-  },
-  {
-    label: "表单问卷",
-    items: [
-      { href: "/forms/library", label: "组件库", icon: "B", resource: "/api/v1/forms", action: "update" },
-      { href: "/design", label: "表单设计", icon: "F", resource: "/api/v1/forms", action: "update" },
-    ],
-  },
-  {
+    id: "config",
     label: "配置中心",
+    icon: "S",
     items: [
-      { href: "/sources", label: "数据源", icon: "S", resource: "/api/v1/data-sources", action: "read" },
-      { href: "/config/channels", label: "接口配置", icon: "I", resource: "/api/v1/system", action: "update" },
-      { href: "/config/sip", label: "SIP 网关", icon: "W", resource: "/api/v1/call-center", action: "update" },
-      { href: "/config/storage", label: "存储配置", icon: "O", resource: "/api/v1/call-center", action: "update" },
-      { href: "/config/recording", label: "录音配置", icon: "V", resource: "/api/v1/call-center", action: "update" },
-      { href: "/config/models", label: "大模型配置", icon: "M", resource: "/api/v1/call-center", action: "update" },
+      { href: "/sources", label: "数据源", resource: "/api/v1/data-sources", action: "read" },
+      { href: "/config/channels", label: "接口配置", resource: "/api/v1/system", action: "update" },
+      { href: "/config/sip", label: "SIP 网关", resource: "/api/v1/call-center", action: "update" },
+      { href: "/config/storage", label: "存储配置", resource: "/api/v1/call-center", action: "update" },
+      { href: "/config/recording", label: "录音配置", resource: "/api/v1/call-center", action: "update" },
+      { href: "/config/models", label: "大模型配置", resource: "/api/v1/call-center", action: "update" },
     ],
   },
   {
+    id: "system",
     label: "系统管理",
+    icon: "A",
     items: [
-      { href: "/account", label: "个人中心", icon: "A" },
-      { href: "/system", label: "用户管理", icon: "U", resource: "/api/v1/users", action: "read" },
-      { href: "/system/dictionaries", label: "字典管理", icon: "Y", resource: "/api/v1/system", action: "read" },
+      { href: "/account", label: "个人中心", resource: "", action: "" },
+      { href: "/system", label: "用户管理", resource: "/api/v1/users", action: "read" },
+      { href: "/system/departments", label: "科室管理", resource: "/api/v1/system", action: "read" },
+      { href: "/system/dictionaries", label: "字典管理", resource: "/api/v1/system", action: "read" },
     ],
   },
 ]
 const currentPath = Astro.url.pathname
+const isItemActive = (href: string) => href === "/" ? currentPath === "/" : currentPath === href || currentPath.startsWith(`${href}/`)
+const isGroupActive = (group: typeof navGroups[number]) => group.items.some((item) => isItemActive(item.href))
 ---
 
 <!doctype html>
@@ -91,13 +133,36 @@ const currentPath = Astro.url.pathname
 
     <aside class="app-sidebar fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r border-line bg-surface">
       <div class="h-full overflow-y-auto px-3 py-4">
-        <nav class="space-y-5">
+        <nav class="space-y-2">
           {navGroups.map((group) => (
-            <div class="nav-group">
-              <p class="nav-group-label mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted">{group.label}</p>
-              <div class="space-y-1">
+            <div
+              class:list={[
+                "nav-group rounded-lg",
+                isGroupActive(group) ? "nav-group-active" : "",
+              ]}
+              data-nav-group
+              data-section-id={group.id}
+              data-default-open={isGroupActive(group) || (currentPath === "/" && group.id === "workspace") ? "true" : "false"}
+            >
+              <button
+                type="button"
+                class:list={[
+                  "nav-section-toggle group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors",
+                  isGroupActive(group) ? "bg-blue-50 text-primary" : "text-gray-700 hover:bg-gray-100 hover:text-ink",
+                ]}
+                data-nav-section-toggle
+                aria-expanded={isGroupActive(group) || (currentPath === "/" && group.id === "workspace") ? "true" : "false"}
+              >
+                <span class:list={[
+                  "grid h-7 w-7 shrink-0 place-items-center rounded-md text-xs font-semibold",
+                  isGroupActive(group) ? "bg-primary text-white" : "bg-gray-100 text-gray-500 group-hover:bg-white",
+                ]}>{group.icon}</span>
+                <span class="nav-group-label min-w-0 flex-1 truncate">{group.label}</span>
+                <span class="nav-section-arrow text-xs text-muted" aria-hidden="true">▾</span>
+              </button>
+              <div class="nav-section-items mt-1 space-y-1 pl-10" data-nav-section-items>
                 {group.items.map((item) => {
-                  const active = item.href === "/" ? currentPath === "/" : currentPath.startsWith(item.href)
+                  const active = isItemActive(item.href)
                   return (
                     <a
                       href={item.href}
@@ -105,14 +170,14 @@ const currentPath = Astro.url.pathname
                       data-resource={item.resource}
                       data-action={item.action}
                       class:list={[
-                        "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                        active ? "bg-blue-50 text-primary" : "text-gray-700 hover:bg-gray-100 hover:text-ink",
+                        "group flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        active ? "bg-blue-50 text-primary" : "text-gray-600 hover:bg-gray-100 hover:text-ink",
                       ]}
                     >
                       <span class:list={[
-                        "grid h-7 w-7 place-items-center rounded-md text-xs font-semibold",
-                        active ? "bg-primary text-white" : "bg-gray-100 text-gray-500 group-hover:bg-white",
-                      ]}>{item.icon}</span>
+                        "h-1.5 w-1.5 shrink-0 rounded-full",
+                        active ? "bg-primary" : "bg-gray-300 group-hover:bg-primary",
+                      ]}></span>
                       <span class="nav-item-label">{item.label}</span>
                     </a>
                   )
@@ -137,6 +202,7 @@ const currentPath = Astro.url.pathname
       const apiBase = "http://127.0.0.1:8080";
       const accessTokenKey = "reporter.accessToken";
       const collapsedKey = "reporter.sidebar.collapsed";
+      const navOpenPrefix = "reporter.nav.open.";
       const canAccess = (permissions, roles, resource, action) => {
         if (roles.includes("admin")) return true;
         if (!resource || !action) return true;
@@ -191,8 +257,21 @@ const currentPath = Astro.url.pathname
         const collapsed = localStorage.getItem(collapsedKey) === "true";
         document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
       };
+      const setNavGroupOpen = (group, open) => {
+        group.classList.toggle("nav-group-open", open);
+        group.querySelector("[data-nav-section-toggle]")?.setAttribute("aria-expanded", String(open));
+      };
+      const applyNavState = () => {
+        document.querySelectorAll("[data-nav-group]").forEach((group) => {
+          const sectionId = group.getAttribute("data-section-id") || "";
+          const stored = localStorage.getItem(`${navOpenPrefix}${sectionId}`);
+          const defaultOpen = group.getAttribute("data-default-open") === "true";
+          setNavGroupOpen(group, stored == null ? defaultOpen : stored === "true");
+        });
+      };
       applyPermissions();
       applySidebarState();
+      applyNavState();
       document.getElementById("sidebarToggle")?.addEventListener("click", () => {
         if (window.matchMedia("(max-width: 900px)").matches) {
           document.documentElement.classList.toggle("mobile-sidebar-open");
@@ -201,6 +280,19 @@ const currentPath = Astro.url.pathname
         const next = !(localStorage.getItem(collapsedKey) === "true");
         localStorage.setItem(collapsedKey, String(next));
         applySidebarState();
+      });
+      document.querySelectorAll("[data-nav-section-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const group = button.closest("[data-nav-group]");
+          if (!group) return;
+          if (document.documentElement.classList.contains("sidebar-collapsed") && !window.matchMedia("(max-width: 900px)").matches) {
+            localStorage.setItem(collapsedKey, "false");
+            applySidebarState();
+          }
+          const next = !group.classList.contains("nav-group-open");
+          localStorage.setItem(`${navOpenPrefix}${group.getAttribute("data-section-id") || ""}`, String(next));
+          setNavGroupOpen(group, next);
+        });
       });
       document.querySelector(".app-sidebar")?.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : null;

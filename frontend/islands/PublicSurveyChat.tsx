@@ -13,6 +13,7 @@ interface ComponentItem {
   rows?: string[]
   columns?: string[]
   scale?: number
+  config?: Record<string, unknown>
 }
 interface SurveyPayload {
   share: { id: string; title: string; token: string; channel?: string; config?: Record<string, unknown> }
@@ -298,6 +299,22 @@ function AnswerControl({ component, value, readOnly, onChange }: { component: Co
   if (component.type === "matrix") {
     const matrixValue = typeof value === "object" && value ? value as Record<string, string> : {}
     return <div className="overflow-x-auto rounded-lg border border-line"><table className="w-full min-w-[520px] text-sm"><tbody>{(component.rows || []).map((row) => <tr key={row} className="border-t border-line first:border-0"><td className="w-36 bg-gray-50 px-3 py-3 font-medium">{row}</td>{(component.columns || []).map((column) => <td key={column} className="px-3 py-3"><label className="flex items-center gap-2"><input type="radio" disabled={readOnly} name={`${component.id}-${row}`} checked={matrixValue[row] === column} onChange={() => onChange({ ...matrixValue, [row]: column })} />{column}</label></td>)}</tr>)}</tbody></table></div>
+  }
+  if (component.type === "table") {
+    const rows = Array.isArray(value) ? value as Record<string, string>[] : [{}]
+    const columns = component.columns?.length ? component.columns : ["项目", "数值", "单位"]
+    function setCell(rowIndex: number, column: string, cellValue: string) {
+      const next = rows.map((row, index) => index === rowIndex ? { ...row, [column]: cellValue } : row)
+      onChange(next)
+    }
+    return <div className="overflow-x-auto rounded-lg border border-line"><table className="w-full min-w-[560px] text-sm"><thead><tr className="bg-gray-50">{columns.map((column) => <th key={column} className="px-3 py-2 text-left">{column}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="border-t border-line">{columns.map((column) => <td key={column} className="px-2 py-2"><input disabled={readOnly} className="h-9 w-full rounded-md border border-line px-2" value={row[column] || ""} onChange={(event) => setCell(rowIndex, column, event.target.value)} /></td>)}</tr>)}</tbody></table>{!readOnly && <button type="button" className="m-2 rounded-md border border-line px-3 py-1.5 text-xs" onClick={() => onChange([...rows, {}])}>添加一行</button>}</div>
+  }
+  if (component.type === "attachment") {
+    const files = Array.isArray(value) ? value as string[] : []
+    return <div className="rounded-lg border border-line p-3"><input disabled={readOnly} type="file" multiple={Boolean(component.config?.multiple ?? true)} accept={String(component.config?.accept || "")} onChange={(event) => onChange(Array.from(event.target.files || []).map((file) => file.name))} />{!!files.length && <div className="mt-2 grid gap-1 text-xs text-muted">{files.map((file) => <span key={file}>{file}</span>)}</div>}<div className="mt-2 text-xs text-muted">附件提交后由后台对象存储接口留痕。</div></div>
+  }
+  if (component.type === "computed") {
+    return <input readOnly className="h-11 w-full rounded-lg border border-line bg-gray-50 px-3 text-base text-muted" value={String(value || "")} placeholder="系统按表达式自动计算" />
   }
   const inputType = component.type === "number" ? "number" : component.type === "date" ? "date" : "text"
   return <input type={inputType} className="h-11 w-full rounded-lg border border-line px-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-blue-100 disabled:bg-gray-50 disabled:text-muted" disabled={readOnly} placeholder={readOnly ? "验证后自动带入" : component.placeholder || "请输入"} value={String(value || "")} onChange={(e) => onChange(inputType === "number" ? Number(e.target.value) : e.target.value)} />

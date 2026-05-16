@@ -1,0 +1,44 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import PageHeader from "../../components/PageHeader.astro"
+
+const modules = [
+  { title: "组件库管理", href: "/forms/components", desc: "维护字段组件和业务组件模板，沉淀可复用采集片段。", tags: ["字段组件", "业务组件", "复用"] },
+  { title: "模板库管理", href: "/forms/templates", desc: "维护调查、随访、投诉、登记等表单模板，供项目绑定。", tags: ["表单模板", "场景模板", "项目引用"] },
+  { title: "表单设计管理", href: "/forms/design", desc: "设计版本化表单 schema，发布后由项目和渠道固定引用。", tags: ["Schema", "版本发布", "数据绑定"] },
+]
+---
+
+<AppLayout>
+  <PageHeader title="表单管理" description="统一管理组件库、模板库和版本化表单设计，支撑调查、随访、投诉、登记等采集场景" />
+  <section class="grid gap-5">
+    <div class="rounded-lg border border-line bg-surface p-5">
+      <h2 class="text-base font-semibold text-ink">管理流程</h2>
+      <div class="mt-4 grid gap-3 md:grid-cols-3">
+        <div class="rounded-lg border border-line p-4">
+          <div class="text-sm font-semibold text-primary">1. 组件库</div>
+          <p class="mt-2 text-sm leading-6 text-muted">把常用字段、患者基础信息、就诊信息、用药记录等沉淀为可复用组件。</p>
+        </div>
+        <div class="rounded-lg border border-line p-4">
+          <div class="text-sm font-semibold text-primary">2. 模板库</div>
+          <p class="mt-2 text-sm leading-6 text-muted">用组件组合成满意度调查、随访问卷、投诉评价和登记模板。</p>
+        </div>
+        <div class="rounded-lg border border-line p-4">
+          <div class="text-sm font-semibold text-primary">3. 表单设计</div>
+          <p class="mt-2 text-sm leading-6 text-muted">进入设计器维护结构、规则和数据绑定，保存并发布版本后给项目使用。</p>
+        </div>
+      </div>
+    </div>
+    <div class="grid gap-4 lg:grid-cols-3">
+      {modules.map((item) => (
+        <a href={item.href} class="rounded-lg border border-line bg-surface p-5 hover:border-primary">
+          <h2 class="text-lg font-semibold text-ink">{item.title}</h2>
+          <p class="mt-2 min-h-12 text-sm leading-6 text-muted">{item.desc}</p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            {item.tags.map((tag) => <span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-primary">{tag}</span>)}
+          </div>
+        </a>
+      ))}
+    </div>
+  </section>
+</AppLayout>

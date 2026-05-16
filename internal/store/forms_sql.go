@@ -122,6 +122,16 @@ func (s *Store) createFormVersionInSQL(ctx context.Context, formID, actor string
 	if err != nil {
 		return domain.FormVersion{}, err
 	}
+	forms, err := s.formsFromSQL(ctx)
+	if err != nil {
+		return domain.FormVersion{}, err
+	}
+	for _, form := range forms {
+		if form.ID == formID {
+			_ = s.RegisterFormSchema(ctx, form, version)
+			break
+		}
+	}
 	return version, nil
 }
 
@@ -164,6 +174,9 @@ func (s *Store) publishFormInSQL(ctx context.Context, formID string) (domain.For
 	}
 	for _, form := range forms {
 		if form.ID == formID {
+			for _, version := range form.Versions {
+				_ = s.RegisterFormSchema(ctx, form, version)
+			}
 			return form, nil
 		}
 	}

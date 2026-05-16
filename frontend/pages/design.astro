@@ -5,6 +5,9 @@ import { FormDesigner } from "../islands/FormDesigner"
 ---
 
 <AppLayout>
-  <PageHeader title="表单设计器" description="设计版本化表单 schema，并为组件绑定静态、HTTP、gRPC 或数据库数据源" />
+  <PageHeader title="表单管理 / 表单设计" description="该入口保留兼容；新的表单管理模块已整合组件库、模板库和表单设计">
+    <a href="/forms" class="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-primary">表单管理</a>
+    <a href="/forms/design" class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white">进入新入口</a>
+  </PageHeader>
   <FormDesigner client:load />
 </AppLayout>

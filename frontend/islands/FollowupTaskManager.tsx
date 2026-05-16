@@ -60,6 +60,7 @@ interface FormComponent {
   rows?: string[]
   columns?: string[]
   scale?: number
+  config?: Record<string, unknown>
 }
 interface FormTemplate { id: string; label: string; hint: string; scenario?: string; components: FormComponent[] }
 interface FormLibrary { templates: FormTemplate[] }
@@ -365,6 +366,21 @@ function FormField({ component, value, onChange }: { component: FormComponent; v
   }
   if (component.type === "matrix") {
     return <div className="overflow-x-auto md:col-span-2"><div className="mb-1 text-sm font-medium text-muted">{component.label}</div><table className="w-full rounded-lg border border-line text-sm"><tbody>{(component.rows || []).map((row) => <tr key={row} className="border-t border-line"><td className="px-3 py-2 font-medium">{row}</td>{(component.columns || []).map((column) => <td key={column} className="px-3 py-2"><label className="flex items-center gap-1"><input type="radio" name={`${component.id}-${row}`} onChange={() => onChange({ ...(typeof value === "object" && value ? value as Record<string, unknown> : {}), [row]: column })} />{column}</label></td>)}</tr>)}</tbody></table></div>
+  }
+  if (component.type === "table") {
+    const rows = Array.isArray(value) ? value as Record<string, string>[] : [{}]
+    const columns = component.columns?.length ? component.columns : ["项目", "数值", "单位"]
+    function setCell(rowIndex: number, column: string, cellValue: string) {
+      onChange(rows.map((row, index) => index === rowIndex ? { ...row, [column]: cellValue } : row))
+    }
+    return <div className="overflow-x-auto md:col-span-2"><div className="mb-1 text-sm font-medium text-muted">{component.label}</div><table className="w-full min-w-[560px] rounded-lg border border-line text-sm"><thead><tr className="bg-gray-50">{columns.map((column) => <th key={column} className="px-3 py-2 text-left">{column}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="border-t border-line">{columns.map((column) => <td key={column} className="px-2 py-2"><input className="h-9 w-full rounded-md border border-line px-2" value={row[column] || ""} onChange={(event) => setCell(rowIndex, column, event.target.value)} /></td>)}</tr>)}</tbody></table><button type="button" className="mt-2 rounded-md border border-line px-3 py-1.5 text-xs" onClick={() => onChange([...rows, {}])}>添加一行</button></div>
+  }
+  if (component.type === "attachment") {
+    const files = Array.isArray(value) ? value as string[] : []
+    return <div className="grid gap-1 md:col-span-2">{label}<div className="rounded-lg border border-line p-3"><input type="file" multiple={Boolean(component.config?.multiple ?? true)} accept={String(component.config?.accept || "")} onChange={(event) => onChange(Array.from(event.target.files || []).map((file) => file.name))} />{!!files.length && <div className="mt-2 grid gap-1 text-xs text-muted">{files.map((file) => <span key={file}>{file}</span>)}</div>}</div></div>
+  }
+  if (component.type === "computed") {
+    return <label className="grid gap-1">{label}<input readOnly className="rounded-lg border border-line bg-gray-50 px-3 py-2 text-base text-muted" value={String(value || "")} placeholder="系统自动计算" /></label>
   }
   const inputType = component.type === "number" ? "number" : component.type === "date" ? "date" : "text"
   return <label className="grid gap-1">{label}<input type={inputType} className="rounded-lg border border-line px-3 py-2 text-base outline-none focus:border-primary focus:ring-2 focus:ring-blue-100" placeholder={component.placeholder} value={String(value || "")} onChange={(e) => onChange(inputType === "number" ? Number(e.target.value) : e.target.value)} />{component.helpText && <span className="text-xs text-muted">{component.helpText}</span>}</label>

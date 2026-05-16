@@ -14,6 +14,8 @@ type ComponentKind =
   | "likert"
   | "matrix"
   | "table"
+  | "computed"
+  | "attachment"
   | "remote_options"
   | "consent"
 
@@ -46,6 +48,7 @@ interface FormComponent {
   rows?: string[]
   columns?: string[]
   scale?: number
+  config?: Record<string, unknown>
   binding?: DataBinding
   children?: FormComponent[]
   visibilityRules?: LogicRule
@@ -68,6 +71,10 @@ interface FormLibraryResponse {
 }
 interface FormVersion { id: string; formId: string; version: number; schema: FormComponent[]; published: boolean; createdAt: string }
 interface ManagedForm { id: string; name: string; description: string; status: string; currentVersionId?: string; versions?: FormVersion[] }
+type SurveyRuntime = {
+  Model: typeof import("survey-core").Model
+  Survey: typeof import("survey-react-ui").Survey
+}
 
 const satisfactionOptions: OptionItem[] = [
   { label: "很不满意", value: "1" },
@@ -96,6 +103,9 @@ const atomicComponents: Preset[] = [
   { id: "atom-remote", label: "远程选项", hint: "来自数据库/API/gRPC/HL7/DICOM", components: [{ id: "remote_options", type: "remote_options", label: "远程选项", required: false, category: "原子组件", binding: { kind: "http", dataSourceId: "patients-api", operation: "GET /options", labelPath: "$.label", valuePath: "$.value" } }] },
   { id: "atom-rating", label: "评分", hint: "星级、NPS、疼痛评分", components: [{ id: "rating", type: "rating", label: "评分", required: false, category: "原子组件", scale: 5 }] },
   { id: "atom-matrix", label: "矩阵", hint: "多维度量表", components: [{ id: "matrix", type: "matrix", label: "矩阵评分", required: false, category: "原子组件", rows: ["评价项 1", "评价项 2"], columns: satisfactionOptions.map((item) => item.label) }] },
+  { id: "atom-table", label: "多维表格", hint: "明细、指标、规格、用药等表格采集", components: [{ id: "sheet_table", type: "table", label: "多维表格", required: false, category: "原子组件", rows: ["记录 1"], columns: ["项目", "数值", "单位"], config: { addRows: true, addColumns: false } }] },
+  { id: "atom-computed", label: "计算字段", hint: "按表达式自动计算分值、费用、风险", components: [{ id: "computed_score", type: "computed", label: "计算字段", required: false, category: "原子组件", config: { expression: "", precision: 2, readonly: true } }] },
+  { id: "atom-attachment", label: "附件上传", hint: "文件、图片、视频、录音上传到对象存储", components: [{ id: "attachments", type: "attachment", label: "附件上传", required: false, category: "原子组件", config: { accept: "image/*,video/*,audio/*,application/pdf", maxSizeMb: 200, multiple: true } }] },
 ]
 
 const commonComponents: Preset[] = [
@@ -164,6 +174,43 @@ const commonComponents: Preset[] = [
 ]
 
 const templates: Preset[] = [
+  {
+    id: "surveyjs-outpatient-satisfaction",
+    label: "SurveyJS 门诊满意度模板",
+    hint: "面向公开链接、微信和短信渠道的标准调查结构，支持矩阵、NPS、条件题和附件扩展",
+    scenario: "调查",
+    components: [
+      ...commonComponents[0].components,
+      ...commonComponents[1].components,
+      ...commonComponents[4].components,
+      { id: "surveyjs_attachment", type: "attachment", label: "补充材料", required: false, category: "公共组件", helpText: "可上传图片、录音或说明材料。", config: { accept: "image/*,audio/*,application/pdf", maxSizeMb: 50, multiple: true } },
+    ],
+  },
+  {
+    id: "surveyjs-nps",
+    label: "SurveyJS NPS 推荐度调查",
+    hint: "推荐意愿、原因追问、开放建议，适合快速满意度或体验净推荐值采集",
+    scenario: "调查",
+    components: [
+      { id: "nps_section", type: "section", label: "推荐意愿", required: false, category: "公共组件" },
+      { id: "recommend_score", type: "rating", label: "您愿意向亲友推荐本院服务吗？", required: true, category: "公共组件", scale: 10, helpText: "0 表示完全不推荐，10 表示非常愿意推荐。" },
+      { id: "low_score_reason", type: "multi_select", label: "影响您推荐的主要原因", required: false, category: "公共组件", options: [{ label: "等待时间", value: "wait_time" }, { label: "沟通解释", value: "communication" }, { label: "流程指引", value: "guidance" }, { label: "费用体验", value: "billing" }, { label: "环境设施", value: "environment" }], visibilityRules: { when: { questionId: "recommend_score", operator: "less_than", value: "7" } } },
+      { id: "nps_feedback", type: "textarea", label: "还有哪些改进建议？", required: false, category: "公共组件" },
+    ],
+  },
+  {
+    id: "surveyjs-registration-table",
+    label: "SurveyJS 多维登记表",
+    hint: "包含动态明细表、计算字段和附件，适合预约、登记、会务和宣传报名",
+    scenario: "调查",
+    components: [
+      { id: "register_section", type: "section", label: "登记信息", required: false, category: "公共组件" },
+      { id: "contact_name", type: "text", label: "联系人", required: true, category: "公共组件" },
+      { id: "contact_phone", type: "text", label: "联系电话", required: true, category: "公共组件", validationRules: { regex: "^1\\d{10}$", message: "请输入 11 位手机号" } },
+      { id: "items_table", type: "table", label: "报名/预约明细", required: false, category: "公共组件", rows: ["记录 1"], columns: ["项目", "人数", "备注"], config: { addRows: true, addColumns: false } },
+      { id: "estimated_total", type: "computed", label: "预计人数", required: false, category: "公共组件", config: { expression: "sum(items_table.人数)", precision: 0, readonly: true } },
+    ],
+  },
   {
     id: "outpatient-satisfaction",
     label: "患者就诊满意度调查",
@@ -245,6 +292,7 @@ const templates: Preset[] = [
 
 const templateScenarios: Array<NonNullable<Preset["scenario"]>> = ["调查", "随访", "术后", "慢病", "体检"]
 type LibraryTab = "templates" | "common" | "atoms" | "bank"
+type DesignerView = "structure" | "surveyPreview" | "surveyJson"
 type ConditionOperator = "equals" | "not_equals" | "contains" | "empty" | "not_empty" | "greater_than" | "less_than"
 interface SimpleCondition { questionId: string; operator: ConditionOperator; value: string }
 interface JumpRuleVisual { when: SimpleCondition; goto: string }
@@ -293,10 +341,21 @@ export function FormDesigner() {
   const [components, setComponents] = useState<FormComponent[]>([])
   const [selected, setSelected] = useState<string>("")
   const [activeTab, setActiveTab] = useState<LibraryTab>("templates")
+  const [designerView, setDesignerView] = useState<DesignerView>("structure")
+  const [surveyRuntime, setSurveyRuntime] = useState<SurveyRuntime | null>(null)
   const [library, setLibrary] = useState<FormLibraryResponse>({ templates, commonComponents, atomicComponents })
   const [libraryMessage, setLibraryMessage] = useState("")
   const [importText, setImportText] = useState("")
+  const [surveyImportText, setSurveyImportText] = useState("")
   const current = useMemo(() => components.find((item) => item.id === selected), [components, selected])
+  const surveyJson = useMemo(() => toSurveyJson(formName, formDescription, components), [formName, formDescription, components])
+  const surveyModel = useMemo(() => {
+    if (!surveyRuntime) return null
+    const model = new surveyRuntime.Model(surveyJson)
+    model.locale = "zh-cn"
+    return model
+  }, [surveyRuntime, surveyJson])
+  const SurveyComponent = surveyRuntime?.Survey
   const visibleTemplateGroups = useMemo(() => templateScenarios
     .map((scenario) => ({ scenario, templates: library.templates.filter((template) => template.scenario === scenario) }))
     .filter((group) => group.templates.length > 0), [library.templates])
@@ -328,6 +387,22 @@ export function FormDesigner() {
       })
       .catch((error) => setLibraryMessage(`组件库使用本地兜底：${error instanceof Error ? error.message : "接口不可用"}`))
   }, [])
+
+  useEffect(() => {
+    if (designerView !== "surveyPreview" || surveyRuntime) return
+    let mounted = true
+    Promise.all([
+      import("survey-core"),
+      import("survey-core/i18n/simplified-chinese"),
+      import("survey-react-ui"),
+      import("survey-core/survey-core.min.css"),
+    ])
+      .then(([core, , ui]) => {
+        if (mounted) setSurveyRuntime({ Model: core.Model, Survey: ui.Survey })
+      })
+      .catch((error) => setLibraryMessage(`SurveyJS 预览加载失败：${error instanceof Error ? error.message : "依赖不可用"}`))
+    return () => { mounted = false }
+  }, [designerView, surveyRuntime])
 
   function appendPreset(preset: Preset) {
     const next = cloneComponents(preset.components)
@@ -399,6 +474,21 @@ export function FormDesigner() {
     setLibrary({ ...library, commonComponents: [item, ...library.commonComponents] })
     setImportText("")
     setLibraryMessage(`已导入 ${imported.length} 道题，可在公共组件和题库中复用。`)
+  }
+
+  function importSurveyJson() {
+    const imported = parseSurveyJsonImport(surveyImportText)
+    if (!imported.components.length) {
+      setLibraryMessage("没有识别到可导入的 SurveyJS 题目")
+      return
+    }
+    setFormName(imported.title || "导入的 SurveyJS 表单")
+    setFormDescription(imported.description || "由 SurveyJS JSON 导入，已转换为平台表单 schema。")
+    setComponents(imported.components)
+    setSelected(imported.components[0]?.id || "")
+    setSurveyImportText("")
+    setDesignerView("structure")
+    setLibraryMessage(`已导入 SurveyJS JSON：${imported.components.filter((item) => item.type !== "section").length} 个题目。请保存为新版本后再发布。`)
   }
 
   function updateList(key: "options" | "rows" | "columns", value: string) {
@@ -500,6 +590,17 @@ export function FormDesigner() {
               <h3 className="mb-2 text-xs font-semibold text-muted">题库复用与导入</h3>
               <textarea className="min-h-28 w-full rounded-md border border-line px-3 py-2 text-xs" placeholder="每行一题：字段ID,题目名称,题型,是否必填&#10;doctor_service,医生沟通,single_select,true" value={importText} onChange={(event) => setImportText(event.target.value)} />
               <button className="mt-2 w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-white" onClick={importQuestionBank}>导入题库</button>
+              <div className="mt-4 rounded-lg border border-line bg-white p-3">
+                <div className="text-xs font-semibold text-ink">导入 SurveyJS JSON</div>
+                <div className="mt-1 text-xs leading-5 text-muted">支持从 SurveyJS 示例、历史问卷或外部模板导入；题目会转换为平台 schema，并继续走版本治理和项目发布。</div>
+                <textarea
+                  className="mt-3 min-h-32 w-full rounded-md border border-line px-3 py-2 font-mono text-xs"
+                  placeholder='{"title":"Patient Satisfaction Survey","pages":[{"elements":[{"type":"rating","name":"recommend","title":"How likely are you to recommend us?"}]}]}'
+                  value={surveyImportText}
+                  onChange={(event) => setSurveyImportText(event.target.value)}
+                />
+                <button className="mt-2 w-full rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-primary" onClick={importSurveyJson}>转换为平台表单</button>
+              </div>
               <div className="mt-3 grid gap-2">
                 {[...library.commonComponents, ...library.atomicComponents].flatMap((preset) => preset.components.map((component) => ({ preset, component }))).filter(({ component }) => component.type !== "section").map(({ preset, component }) => (
                   <button key={`${preset.id}-${component.id}`} className="rounded-md border border-line px-3 py-2 text-left text-sm hover:border-primary hover:bg-blue-50" onClick={() => appendPreset({ id: component.id, label: component.label, hint: preset.label, components: [component] })}>
@@ -535,6 +636,27 @@ export function FormDesigner() {
           <span>状态：{formStatus === "published" ? "已发布，线上版本已锁定；继续保存会生成新版本" : "草稿，可继续编辑"} · 当前题目 {components.filter((item) => item.type !== "section").length} 个 · 矩阵 {components.filter((item) => item.type === "matrix").length} 个</span>
           <span>{currentForm?.versions?.length ? `历史版本 ${currentForm.versions.length} 个` : "尚未保存版本"}</span>
         </div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-white p-3">
+          <div>
+            <div className="text-sm font-semibold">SurveyJS 兼容预览</div>
+            <div className="mt-1 text-xs text-muted">当前表单 schema 会实时转换为 SurveyJS JSON，便于预览复杂问卷、矩阵、文件和条件显示。</div>
+          </div>
+          <div className="grid grid-cols-3 gap-1 rounded-lg border border-line bg-gray-50 p-1 text-sm">
+            {[
+              { id: "structure", label: "结构" },
+              { id: "surveyPreview", label: "预览" },
+              { id: "surveyJson", label: "JSON" },
+            ].map((item) => (
+              <button
+                key={item.id}
+                className={`rounded-md px-3 py-1.5 ${designerView === item.id ? "bg-white text-primary shadow-sm" : "text-muted hover:text-ink"}`}
+                onClick={() => setDesignerView(item.id as DesignerView)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
         {!!currentForm?.versions?.length && <div className="mb-4 rounded-lg border border-line bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -557,7 +679,13 @@ export function FormDesigner() {
             })}
           </div>
         </div>}
-        {components.length === 0 ? (
+        {designerView === "surveyPreview" ? (
+          <div className="min-h-[560px] rounded-lg border border-line bg-white p-3">
+            {SurveyComponent && surveyModel ? <SurveyComponent model={surveyModel} /> : <div className="flex min-h-[520px] items-center justify-center text-sm text-muted">正在加载 SurveyJS 预览...</div>}
+          </div>
+        ) : designerView === "surveyJson" ? (
+          <pre className="max-h-[620px] overflow-auto rounded-lg border border-line bg-slate-950 p-4 text-xs leading-5 text-slate-100">{JSON.stringify(surveyJson, null, 2)}</pre>
+        ) : components.length === 0 ? (
           <div className="flex min-h-[560px] items-center justify-center rounded-lg border-2 border-dashed border-line text-sm text-muted">
             从左侧选择医疗公共组件、原子组件，或套用业务模板。
           </div>
@@ -623,17 +751,44 @@ export function FormDesigner() {
                 <input type="number" min={3} max={10} className="rounded-md border border-line px-3 py-2" value={current.scale || 5} onChange={(event) => updateCurrent({ scale: Number(event.target.value) })} />
               </label>
             )}
-            {current.type === "matrix" && (
+            {(current.type === "matrix" || current.type === "table") && (
               <>
                 <label className="grid gap-1">
-                  <span className="text-muted">矩阵行，每行一个评价项</span>
+                  <span className="text-muted">{current.type === "table" ? "表格默认行，每行一个" : "矩阵行，每行一个评价项"}</span>
                   <textarea className="min-h-28 rounded-md border border-line px-3 py-2" value={(current.rows || []).join("\n")} onChange={(event) => updateList("rows", event.target.value)} />
                 </label>
                 <label className="grid gap-1">
-                  <span className="text-muted">矩阵列，每行一个等级</span>
+                  <span className="text-muted">{current.type === "table" ? "表格列，每行一个字段" : "矩阵列，每行一个等级"}</span>
                   <textarea className="min-h-28 rounded-md border border-line px-3 py-2" value={(current.columns || []).join("\n")} onChange={(event) => updateList("columns", event.target.value)} />
                 </label>
               </>
+            )}
+            {current.type === "computed" && (
+              <div className="grid gap-2 rounded-md border border-line bg-gray-50 p-3">
+                <h3 className="text-xs font-semibold text-muted">计算字段</h3>
+                <label className="grid gap-1">
+                  <span className="text-muted">表达式</span>
+                  <input className="rounded-md border border-line bg-white px-3 py-2" value={String(current.config?.expression || "")} placeholder="overall_satisfaction * 20" onChange={(event) => updateCurrent({ config: { ...(current.config || {}), expression: event.target.value } })} />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-muted">小数位</span>
+                  <input type="number" min={0} max={6} className="rounded-md border border-line bg-white px-3 py-2" value={Number(current.config?.precision ?? 2)} onChange={(event) => updateCurrent({ config: { ...(current.config || {}), precision: Number(event.target.value) } })} />
+                </label>
+              </div>
+            )}
+            {current.type === "attachment" && (
+              <div className="grid gap-2 rounded-md border border-line bg-gray-50 p-3">
+                <h3 className="text-xs font-semibold text-muted">多模态附件</h3>
+                <label className="grid gap-1">
+                  <span className="text-muted">允许类型</span>
+                  <input className="rounded-md border border-line bg-white px-3 py-2" value={String(current.config?.accept || "")} placeholder="image/*,video/*,audio/*,application/pdf" onChange={(event) => updateCurrent({ config: { ...(current.config || {}), accept: event.target.value } })} />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-muted">最大大小 MB</span>
+                  <input type="number" min={1} max={500} className="rounded-md border border-line bg-white px-3 py-2" value={Number(current.config?.maxSizeMb ?? 200)} onChange={(event) => updateCurrent({ config: { ...(current.config || {}), maxSizeMb: Number(event.target.value) } })} />
+                </label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(current.config?.multiple ?? true)} onChange={(event) => updateCurrent({ config: { ...(current.config || {}), multiple: event.target.checked } })} />允许多文件</label>
+              </div>
             )}
 
             <div className="grid gap-3 rounded-md border border-line bg-gray-50 p-3">
@@ -712,6 +867,354 @@ export function FormDesigner() {
     </div>
     </div>
   )
+}
+
+function toSurveyJson(title: string, description: string, components: FormComponent[]) {
+  const page = { name: "page1", title: title || "未命名表单", description: description || "", elements: [] as Array<Record<string, unknown>> }
+  let currentPanel: Record<string, unknown> | null = null
+
+  components.forEach((component) => {
+    if (component.type === "section") {
+      currentPanel = { type: "panel", name: surveyName(component.id), title: component.label, elements: [] as Array<Record<string, unknown>> }
+      page.elements.push(currentPanel)
+      return
+    }
+    const element = toSurveyElement(component)
+    if (!element) return
+    if (currentPanel && Array.isArray(currentPanel.elements)) {
+      currentPanel.elements.push(element)
+    } else {
+      page.elements.push(element)
+    }
+  })
+
+  return {
+    title: title || "未命名表单",
+    description: description || "",
+    locale: "zh-cn",
+    showQuestionNumbers: "on",
+    questionErrorLocation: "bottom",
+    requiredText: "*",
+    pagePrevText: "上一页",
+    pageNextText: "下一页",
+    completeText: "提交",
+    previewText: "预览",
+    editText: "编辑",
+    clearInvisibleValues: "onHidden",
+    textUpdateMode: "onTyping",
+    pages: [page],
+  }
+}
+
+function toSurveyElement(component: FormComponent): Record<string, unknown> | null {
+  const base: Record<string, unknown> = {
+    name: surveyName(component.id),
+    title: component.label,
+    description: component.helpText || undefined,
+    isRequired: component.required || undefined,
+    placeholder: component.placeholder || undefined,
+    visibleIf: surveyVisibleIf(component.visibilityRules),
+    reporterComponentType: component.type,
+    reporterBinding: component.binding && component.binding.kind !== "none" ? component.binding : undefined,
+  }
+  const validators = surveyValidators(component)
+  if (validators.length) base.validators = validators
+
+  switch (component.type) {
+    case "static_text":
+      return { type: "html", name: surveyName(component.id), html: component.helpText || component.label }
+    case "text":
+      return { ...base, type: "text" }
+    case "textarea":
+      return { ...base, type: "comment", rows: 4 }
+    case "number":
+      return { ...base, type: "text", inputType: "number" }
+    case "date":
+      return { ...base, type: "text", inputType: "date" }
+    case "single_select":
+    case "likert":
+    case "remote_options":
+      return { ...base, type: "dropdown", choices: surveyChoices(component.options) }
+    case "multi_select":
+      return { ...base, type: "checkbox", choices: surveyChoices(component.options) }
+    case "rating":
+      return { ...base, type: "rating", rateMin: 1, rateMax: component.scale || 5, minRateDescription: "低", maxRateDescription: "高" }
+    case "matrix":
+      return {
+        ...base,
+        type: "matrix",
+        rows: (component.rows?.length ? component.rows : ["评价项"]).map((row, index) => ({ value: surveyValue(row, index), text: row })),
+        columns: (component.columns?.length ? component.columns : satisfactionOptions.map((item) => item.label)).map((column, index) => ({ value: String(index + 1), text: column })),
+      }
+    case "table":
+      return {
+        ...base,
+        type: "matrixdynamic",
+        rowCount: Math.max(1, component.rows?.length || 1),
+        addRowText: "添加一行",
+        removeRowText: "删除",
+        noRowsText: "暂无明细，请添加一行",
+        columns: (component.columns?.length ? component.columns : ["项目", "数值"]).map((column) => ({ name: surveyName(column), title: column, cellType: "text" })),
+      }
+    case "computed":
+      return { ...base, type: "expression", expression: String(component.config?.expression || "") }
+    case "attachment":
+      return {
+        ...base,
+        type: "file",
+        waitForUpload: true,
+        storeDataAsText: false,
+        titleLocation: "top",
+        allowMultiple: Boolean(component.config?.multiple ?? true),
+        acceptedTypes: String(component.config?.accept || ""),
+        maxSize: Number(component.config?.maxSizeMb || 200) * 1024 * 1024,
+      }
+    case "consent":
+      return { ...base, type: "boolean", labelTrue: "同意", labelFalse: "不同意" }
+    default:
+      return null
+  }
+}
+
+function parseSurveyJsonImport(text: string): { title: string; description: string; components: FormComponent[] } {
+  const raw = safeJSON(text, null)
+  if (!raw || typeof raw !== "object") return { title: "", description: "", components: [] }
+  const survey = raw as Record<string, unknown>
+  const components: FormComponent[] = []
+  const pages = Array.isArray(survey.pages) ? survey.pages : [{ elements: survey.elements }]
+  pages.forEach((page, pageIndex) => {
+    const pageRecord = ruleRecord(page) || {}
+    const pageTitle = localizeSurveyText(pageRecord.title || pageRecord.name || (pages.length > 1 ? `第 ${pageIndex + 1} 页` : ""))
+    if (pageTitle) {
+      components.push({ id: surveyName(`section_${pageIndex + 1}`), type: "section", label: pageTitle, required: false, category: "公共组件" })
+    }
+    collectSurveyElements(pageRecord.elements, components)
+  })
+  return {
+    title: localizeSurveyText(survey.title || survey.name || "导入的 SurveyJS 表单"),
+    description: localizeSurveyText(survey.description || ""),
+    components,
+  }
+}
+
+function collectSurveyElements(elements: unknown, components: FormComponent[]) {
+  if (!Array.isArray(elements)) return
+  elements.forEach((element, index) => {
+    const record = ruleRecord(element)
+    if (!record) return
+    const type = stringValue(record.type)
+    if (type === "panel" || type === "paneldynamic") {
+      components.push({
+        id: surveyName(stringValue(record.name) || `panel_${index + 1}`),
+        type: "section",
+        label: localizeSurveyText(record.title || record.name || `分组 ${index + 1}`),
+        required: false,
+        category: "公共组件",
+      })
+      collectSurveyElements(record.elements || record.templateElements, components)
+      return
+    }
+    const converted = surveyElementToComponent(record, index)
+    if (converted) components.push(converted)
+  })
+}
+
+function surveyElementToComponent(record: Record<string, unknown>, index: number): FormComponent | null {
+  const sourceType = stringValue(record.type)
+  const id = surveyName(stringValue(record.name) || `question_${index + 1}`)
+  const label = localizeSurveyText(record.title || record.name || `题目 ${index + 1}`)
+  const common = {
+    id,
+    label,
+    required: Boolean(record.isRequired),
+    category: "公共组件" as const,
+    helpText: localizeSurveyText(record.description || ""),
+    placeholder: localizeSurveyText(record.placeholder || ""),
+    visibilityRules: surveyVisibleToRule(stringValue(record.visibleIf)),
+    validationRules: surveyValidationToRule(record.validators),
+    config: { surveyjs: { sourceType } },
+  }
+
+  switch (sourceType) {
+    case "html":
+      return { ...common, type: "static_text", helpText: localizeSurveyText(record.html || record.title || "") }
+    case "comment":
+      return { ...common, type: "textarea" }
+    case "text":
+      return { ...common, type: stringValue(record.inputType) === "date" ? "date" : stringValue(record.inputType) === "number" ? "number" : "text" }
+    case "dropdown":
+    case "radiogroup":
+    case "buttongroup":
+      return { ...common, type: "single_select", options: surveyOptionsToItems(record.choices) }
+    case "checkbox":
+      return { ...common, type: "multi_select", options: surveyOptionsToItems(record.choices) }
+    case "rating":
+      return { ...common, type: "rating", scale: Number(record.rateMax || 5) }
+    case "matrix":
+      return { ...common, type: "matrix", rows: surveyRowsToLabels(record.rows), columns: surveyRowsToLabels(record.columns) }
+    case "matrixdynamic":
+    case "matrixdropdown":
+      return { ...common, type: "table", rows: ["记录 1"], columns: surveyMatrixColumns(record.columns), config: { ...(common.config || {}), addRows: sourceType === "matrixdynamic", addColumns: false } }
+    case "file":
+      return { ...common, type: "attachment", config: { ...(common.config || {}), accept: stringValue(record.acceptedTypes || ""), multiple: Boolean(record.allowMultiple) } }
+    case "boolean":
+      return { ...common, type: "consent" }
+    case "expression":
+      return { ...common, type: "computed", config: { ...(common.config || {}), expression: stringValue(record.expression), readonly: true } }
+    default:
+      return { ...common, type: "text" }
+  }
+}
+
+function surveyOptionsToItems(value: unknown): OptionItem[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item, index) => {
+    if (typeof item === "string" || typeof item === "number") return { label: localizeSurveyText(item), value: String(item) || String(index + 1) }
+    const record = ruleRecord(item) || {}
+    return { label: localizeSurveyText(record.text || record.title || record.value || `选项 ${index + 1}`), value: stringValue(record.value || index + 1) }
+  })
+}
+
+function surveyRowsToLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item, index) => {
+    if (typeof item === "string" || typeof item === "number") return localizeSurveyText(item)
+    const record = ruleRecord(item) || {}
+    return localizeSurveyText(record.text || record.title || record.value || `项目 ${index + 1}`)
+  })
+}
+
+function surveyMatrixColumns(value: unknown): string[] {
+  const labels = surveyRowsToLabels(value)
+  return labels.length ? labels : ["项目", "数值", "备注"]
+}
+
+function surveyValidationToRule(value: unknown): LogicRule {
+  if (!Array.isArray(value)) return {}
+  const rule: LogicRule = {}
+  value.forEach((item) => {
+    const record = ruleRecord(item)
+    if (!record) return
+    const type = stringValue(record.type)
+    if (type === "regex") {
+      rule.regex = stringValue(record.regex)
+      rule.message = localizeSurveyText(record.text || record.message || "")
+    }
+    if (type === "numeric") {
+      if (record.minValue !== undefined) rule.min = record.minValue
+      if (record.maxValue !== undefined) rule.max = record.maxValue
+      if (record.text || record.message) rule.message = localizeSurveyText(record.text || record.message)
+    }
+    if (type === "text") {
+      if (record.minLength !== undefined) rule.min = record.minLength
+      if (record.maxLength !== undefined) rule.max = record.maxLength
+      if (record.text || record.message) rule.message = localizeSurveyText(record.text || record.message)
+    }
+  })
+  return rule
+}
+
+function surveyVisibleToRule(value: string): LogicRule {
+  const match = value.match(/\{([^}]+)\}\s*(=|!=|>|<|contains)\s*'?([^']*)'?/)
+  if (!match) return {}
+  const operatorMap: Record<string, ConditionOperator> = { "=": "equals", "!=": "not_equals", ">": "greater_than", "<": "less_than", contains: "contains" }
+  return { when: { questionId: match[1], operator: operatorMap[match[2]] || "equals", value: match[3] || "" } }
+}
+
+function surveyChoices(options?: OptionItem[]) {
+  const source = options?.length ? options : satisfactionOptions
+  return source.map((item, index) => ({ value: item.value || String(index + 1), text: item.label || item.value }))
+}
+
+function surveyVisibleIf(rule?: LogicRule) {
+  const condition = conditionFromVisibility(rule)
+  if (!condition.questionId) return undefined
+  const field = surveyName(condition.questionId)
+  const value = condition.value.replace(/'/g, "\\'")
+  switch (condition.operator) {
+    case "not_equals":
+      return `{${field}} != '${value}'`
+    case "contains":
+      return `{${field}} contains '${value}'`
+    case "empty":
+      return `{${field}} empty`
+    case "not_empty":
+      return `{${field}} notempty`
+    case "greater_than":
+      return `{${field}} > ${Number.isFinite(Number(condition.value)) ? condition.value : `'${value}'`}`
+    case "less_than":
+      return `{${field}} < ${Number.isFinite(Number(condition.value)) ? condition.value : `'${value}'`}`
+    default:
+      return `{${field}} = '${value}'`
+  }
+}
+
+function surveyValidators(component: FormComponent) {
+  const rule = validationFromRule(component.validationRules)
+  const validators: Array<Record<string, unknown>> = []
+  if (rule.regex.trim()) validators.push({ type: "regex", regex: rule.regex.trim(), text: rule.message || "格式不正确" })
+  if (rule.min !== "" || rule.max !== "") {
+    if (component.type === "number" || component.type === "rating") {
+      validators.push({ type: "numeric", minValue: rule.min === "" ? undefined : Number(rule.min), maxValue: rule.max === "" ? undefined : Number(rule.max), text: rule.message || "数值超出范围" })
+    } else {
+      validators.push({ type: "text", minLength: rule.min === "" ? undefined : Number(rule.min), maxLength: rule.max === "" ? undefined : Number(rule.max), text: rule.message || "长度不符合要求" })
+    }
+  }
+  return validators
+}
+
+function surveyName(value: string) {
+  const normalized = value.trim().replace(/[^\w\u4e00-\u9fa5]+/g, "_").replace(/^_+|_+$/g, "")
+  return normalized || "field"
+}
+
+function surveyValue(value: string, index: number) {
+  const normalized = value.trim().replace(/[^\w\u4e00-\u9fa5]+/g, "_").replace(/^_+|_+$/g, "")
+  return normalized || String(index + 1)
+}
+
+function localizeSurveyText(value: unknown): string {
+  if (value === undefined || value === null) return ""
+  const text = String(value).trim()
+  if (!text) return ""
+  const translations: Record<string, string> = {
+    "Patient Satisfaction Survey": "患者满意度调查",
+    "Outpatient Satisfaction Survey": "门诊满意度调查",
+    "How likely are you to recommend us?": "您愿意向亲友推荐本院服务吗？",
+    "How likely are you to recommend our service?": "您愿意向亲友推荐我们的服务吗？",
+    "Overall satisfaction": "总体满意度",
+    "Doctor communication": "医生沟通",
+    "Nurse service": "护士服务",
+    "Waiting time": "候诊时间",
+    "Registration": "挂号缴费",
+    "Environment": "环境设施",
+    "Feedback": "意见与建议",
+    "Please leave a comment": "请填写意见或建议",
+    "Other": "其他",
+    "None": "无",
+    "Yes": "是",
+    "No": "否",
+    "Very dissatisfied": "很不满意",
+    "Dissatisfied": "不满意",
+    "Neutral": "一般",
+    "Satisfied": "满意",
+    "Very satisfied": "非常满意",
+    "Poor": "差",
+    "Fair": "一般",
+    "Good": "好",
+    "Excellent": "很好",
+    "Name": "姓名",
+    "Phone": "联系电话",
+    "Mobile": "手机号",
+    "Gender": "性别",
+    "Age": "年龄",
+    "Department": "科室",
+    "Doctor": "医生",
+    "Visit date": "就诊日期",
+    "Diagnosis": "诊断",
+    "Upload file": "上传附件",
+  }
+  return translations[text] || text
 }
 
 function FlowStep({ index, title, text }: { index: number; title: string; text: string }) {

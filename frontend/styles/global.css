@@ -68,6 +68,22 @@ button {
   transition: width 160ms ease;
 }
 
+.nav-section-items {
+  display: none;
+}
+
+.nav-group-open > .nav-section-items {
+  display: grid;
+}
+
+.nav-section-arrow {
+  transition: transform 160ms ease;
+}
+
+.nav-group-open .nav-section-arrow {
+  transform: rotate(180deg);
+}
+
 .sidebar-collapsed .app-sidebar {
   width: 4.5rem;
 }
@@ -78,6 +94,8 @@ button {
 
 .sidebar-collapsed .nav-item-label,
 .sidebar-collapsed .nav-group-label,
+.sidebar-collapsed .nav-section-arrow,
+.sidebar-collapsed .nav-section-items,
 .sidebar-collapsed .sidebar-extra {
   display: none;
 }
@@ -87,7 +105,8 @@ button {
   gap: 0.5rem;
 }
 
-.sidebar-collapsed .app-sidebar a {
+.sidebar-collapsed .app-sidebar a,
+.sidebar-collapsed .nav-section-toggle {
   justify-content: center;
   padding-left: 0.5rem;
   padding-right: 0.5rem;
@@ -111,11 +130,21 @@ button {
 
   .sidebar-collapsed .nav-item-label,
   .sidebar-collapsed .nav-group-label,
+  .sidebar-collapsed .nav-section-arrow,
   .sidebar-collapsed .sidebar-extra {
     display: block;
   }
 
-  .sidebar-collapsed .app-sidebar a {
+  .sidebar-collapsed .nav-section-items {
+    display: none;
+  }
+
+  .sidebar-collapsed .nav-group-open > .nav-section-items {
+    display: grid;
+  }
+
+  .sidebar-collapsed .app-sidebar a,
+  .sidebar-collapsed .nav-section-toggle {
     justify-content: flex-start;
     padding-left: 0.75rem;
     padding-right: 0.75rem;

@@ -1,0 +1,14 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import { ExportCenterManager } from "../../islands/ExportCenterManager"
+---
+
+<AppLayout title="导出中心">
+  <section class="mx-auto grid max-w-7xl gap-5 px-6 py-8">
+    <header>
+      <h1 class="text-3xl font-semibold tracking-tight">导出中心</h1>
+      <p class="mt-2 text-muted">集中管理报表导出任务和历史，覆盖 Excel、图片、PDF 和 Word。</p>
+    </header>
+    <ExportCenterManager client:load />
+  </section>
+</AppLayout>

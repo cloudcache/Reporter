@@ -4,9 +4,10 @@ type Row = Record<string, string | number>
 
 interface ResultsTableProps {
   rows: Row[]
+  onRowClick?: (row: Row) => void
 }
 
-export function ResultsTable({ rows }: ResultsTableProps) {
+export function ResultsTable({ rows, onRowClick }: ResultsTableProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [error, setError] = useState("")
 
@@ -43,13 +44,13 @@ export function ResultsTable({ rows }: ResultsTableProps) {
   if (rows.length === 0) {
     return <div className="grid h-[460px] w-full place-items-center rounded-lg border border-line bg-white text-sm text-muted">暂无明细数据</div>
   }
-  if (error) return <FallbackTable rows={rows} />
+  if (error || onRowClick) return <FallbackTable rows={rows} onRowClick={onRowClick} />
   return <div className="w-full overflow-x-auto">
     <div ref={ref} className="h-[460px] min-w-[640px] overflow-hidden rounded-lg border border-line bg-white" />
   </div>
 }
 
-function FallbackTable({ rows }: { rows: Row[] }) {
+function FallbackTable({ rows, onRowClick }: { rows: Row[]; onRowClick?: (row: Row) => void }) {
   const fields = Object.keys(rows[0] || {})
   return <div className="rounded-lg border border-line bg-white">
     <div className="max-h-[460px] overflow-auto">
@@ -59,7 +60,7 @@ function FallbackTable({ rows }: { rows: Row[] }) {
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={index} className="border-b border-line last:border-0 hover:bg-gray-50">
+            <tr key={index} className={`border-b border-line last:border-0 hover:bg-gray-50 ${onRowClick ? "cursor-pointer" : ""}`} onClick={() => onRowClick?.(row)}>
               {fields.map((field) => <td key={field} className="px-3 py-2">{String(row[field] ?? "")}</td>)}
             </tr>
           ))}

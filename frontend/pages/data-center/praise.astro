@@ -1,0 +1,14 @@
+---
+import AppLayout from "../../layouts/AppLayout.astro"
+import { PraiseManager } from "../../islands/PraiseManager"
+---
+
+<AppLayout title="表扬管理">
+  <section class="mx-auto grid max-w-7xl gap-5 px-6 py-8">
+    <header>
+      <h1 class="text-3xl font-semibold tracking-tight">表扬管理</h1>
+      <p class="mt-2 text-muted">登记好人好事、锦旗、感谢信和电话表扬，按科室、人员、方式进入统计分析。</p>
+    </header>
+    <PraiseManager client:load />
+  </section>
+</AppLayout>
